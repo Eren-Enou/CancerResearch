@@ -1,0 +1,6 @@
+FICTIONAL DOCUMENT - SYNTHETIC TEST DATA - NOT A REAL PATIENT
+IMAGINARY VALLEY CLINIC RADIOLOGY
+Study: MRI pelvis (fictional)
+Study date: 2026-09-02
+Findings: No measurable lesion is described in this fictional report.
+Impression: Fictional. Not diagnostic.

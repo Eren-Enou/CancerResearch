@@ -1,0 +1,8 @@
+FICTIONAL DOCUMENT - SYNTHETIC TEST DATA - NOT A REAL PATIENT
+IMAGINARY VALLEY CLINIC LABORATORY
+Patient: Fictional Case M26
+Specimen collected: 18 Sep 2026
+Report date: 19 Sep 2026
+
+TEST                 RESULT  FLAG  UNITS   REF RANGE
+Cancer antigen 125   202     H     U/mL    <35

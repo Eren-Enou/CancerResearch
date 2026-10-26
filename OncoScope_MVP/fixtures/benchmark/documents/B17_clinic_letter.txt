@@ -1,0 +1,7 @@
+FICTIONAL DOCUMENT - SYNTHETIC TEST DATA - NOT A REAL PATIENT
+IMAGINARY VALLEY ONCOLOGY CLINIC (FICTIONAL)
+Letter date: 2026-10-16
+
+Dear colleague,
+The CA-125 values were discussed with the fictional patient.
+Plan: repeat CA-125 in three weeks.
