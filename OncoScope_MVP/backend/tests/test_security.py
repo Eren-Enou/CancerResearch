@@ -185,10 +185,23 @@ def test_records_cannot_be_linked_across_cases(client):
     assert "Fictional Case A" not in csv
 
 
-@pytest.mark.xfail(strict=True, reason="Known gap (threat model T1): no authentication; any local process can read any case. M3.1.")
-def test_unauthenticated_requests_are_rejected(client):
-    case(client)
-    assert client.get("/api/patients").status_code == 401
+def test_unauthenticated_requests_are_rejected(tmp_path, monkeypatch):
+    """Formerly a strict xfail (threat model T1). Fixed in M3.1-A for protected mode; details in test_protected.py."""
+    monkeypatch.setenv("ONCOSCOPE_MODE", "protected")
+    monkeypatch.setenv("ONCOSCOPE_DB_PATH", str(tmp_path / "protected.sqlite3"))
+    with TestClient(app) as c:
+        token = c.post("/api/auth/setup", json={"display_name": "Fictional Owner", "passphrase": "fictional passphrase"}).json()["token"]
+        case(_Authed(c, token))
+        assert c.get("/api/patients").status_code == 401
+        assert c.get("/api/patients", headers={"Authorization": f"Bearer {token}"}).json()[0]["label"] == "Fictional Case SEC"
+
+
+class _Authed:
+    def __init__(self, client, token):
+        self.client, self.headers = client, {"Authorization": f"Bearer {token}"}
+
+    def __getattr__(self, method):
+        return lambda url, **kw: getattr(self.client, method)(url, **{**kw, "headers": {**self.headers, **kw.get("headers", {})}})
 
 
 # --- Documents: hashes, malformed input, traversal ----------------------------------------------------------

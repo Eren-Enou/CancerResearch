@@ -7,6 +7,7 @@ read the database file can still read the records (M3.1-B/C). Hashing is done by
 from __future__ import annotations
 
 import hashlib
+import math
 import os
 import secrets
 import threading
@@ -98,7 +99,7 @@ def create_owner(conn, display_name: str, passphrase: str) -> dict:
 
 def _blocked() -> int:
     remaining = _blocked_until - time.monotonic()
-    return int(remaining) + 1 if remaining > 0 else 0
+    return math.ceil(remaining) if remaining > 0 else 0
 
 
 def verify_passphrase(conn, passphrase: str) -> dict:
