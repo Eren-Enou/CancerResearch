@@ -1,5 +1,6 @@
 """OncoScope local API: descriptive, source-linked clinical record organization."""
 from contextlib import asynccontextmanager
+import json
 import sqlite3
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -8,13 +9,15 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import documents
+from . import documents, extraction
 from .db import (
-    OBSERVATION_TABLES, RECORD_TABLES, SCHEMA_VERSION, connection, init_db, insert_record, now_utc, update_record, verify_audit_chain,
+    OBSERVATION_TABLES, RECORD_TABLES, SCHEMA_VERSION, audit, connection, init_db, insert_record, now_utc, update_record,
+    verify_audit_chain,
 )
 from .models import (
     ANCHOR_FIELDS, CREATE_MODELS, EDITABLE_FIELDS, NULLABLE_FIELDS, Correction, EventCreate, LabCorrection, LabCreate,
-    MeasurementCreate, PatientCreate, SourceCreate, StatusChange, StudyCreate, TreatmentCreate,
+    ExtractionAccept, ExtractionReject, MeasurementCreate, PatientCreate, SourceCreate, StatusChange, StudyCreate,
+    TreatmentCreate,
 )
 from .reporting import build_csv, build_export, build_report, patient_records
 from .units import exact_difference, format_number, rule_for, test_key, unit_spelling_conflict
@@ -425,6 +428,120 @@ def get_document(source_id: int):
         "Content-Disposition": f'inline; filename="{source["document_filename"]}"',
         "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "sandbox", "X-Document-SHA256": actual,
     })
+
+
+# --- Extraction review queue --------------------------------------------------------------------
+
+def extraction_view(row: dict) -> dict:
+    out = {k: v for k, v in row.items() if not k.endswith("_json")}
+    out["proposed"] = json.loads(row["proposed_json"])
+    out["issues"] = json.loads(row["issues_json"])
+    out["accepted"] = json.loads(row["accepted_json"]) if row["accepted_json"] else None
+    return out
+
+
+def get_extraction(conn: sqlite3.Connection, extraction_id: int) -> dict:
+    row = conn.execute("SELECT * FROM extractions WHERE id=?", (extraction_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, f"Extraction #{extraction_id} not found")
+    return dict(row)
+
+
+@app.post("/api/sources/{source_id}/extract", status_code=201)
+def run_extraction(source_id: int):
+    """Proposes CA-125 transcriptions from a source document. Re-running never duplicates a proposal."""
+    with connection() as conn:
+        source = get_record(conn, "sources", source_id)
+        if not source["document_sha256"]:
+            raise HTTPException(422, "Attach a document to this source before running extraction")
+        pages = document_pages(conn, source)
+        if not any(page.strip() for page in pages):
+            raise HTTPException(422, "This document has no text layer (image or scanned PDF); transcribe it manually with a region anchor")
+        created, existing = [], []
+        for proposal in extraction.extract_ca125(pages, source["source_date"]):
+            key = (source_id, extraction.PARSER, extraction.PARSER_VERSION, proposal.page, proposal.start)
+            found = conn.execute("""SELECT * FROM extractions WHERE source_id=? AND parser=? AND parser_version=? AND page=? AND start=?""",
+                                 key).fetchone()
+            if found:
+                existing.append(extraction_view(dict(found)))
+                continue
+            row = insert_record(conn, "extractions", {
+                "patient_id": source["patient_id"], "source_id": source_id, "document_sha256": source["document_sha256"],
+                "parser": extraction.PARSER, "parser_version": extraction.PARSER_VERSION, "page": proposal.page,
+                "start": proposal.start, "end": proposal.end, "original_text": proposal.original_text,
+                "proposed_json": json.dumps(proposal.fields, sort_keys=True), "issues_json": json.dumps(proposal.issues),
+            })
+            created.append(extraction_view(row))
+        return {"parser": extraction.PARSER, "parser_version": extraction.PARSER_VERSION, "created": created, "existing": existing,
+                "note": "Proposals are pending review. None of them is a record until a person accepts it."}
+
+
+@app.get("/api/patients/{patient_id}/extractions")
+def list_extractions(patient_id: int, status: str | None = Query(default=None, pattern="^(pending|accepted|rejected)$")):
+    with connection() as conn:
+        ensure_patient(conn, patient_id)
+        query, args = "SELECT * FROM extractions WHERE patient_id=?", (patient_id,)
+        if status:
+            query, args = query + " AND status=?", args + (status,)
+        return [extraction_view(r) for r in rows(conn, query + " ORDER BY source_id, page, start", args)]
+
+
+def _decide(conn: sqlite3.Connection, row: dict, status: str, reason: str | None, accepted: dict | None, record_id: int | None,
+            detail: dict) -> dict:
+    conn.execute("""UPDATE extractions SET status=?, decision_reason=?, decided_at=?, accepted_json=?, record_entity=?, record_id=?
+                    WHERE id=?""", (status, reason, now_utc(), json.dumps(accepted, sort_keys=True) if accepted else None,
+                                    "labs" if record_id else None, record_id, row["id"]))
+    audit(conn, "extractions", row["id"], "accept" if status == "accepted" else "reject", detail,
+          patient_id=row["patient_id"], reason=reason)
+    return extraction_view(dict(conn.execute("SELECT * FROM extractions WHERE id=?", (row["id"],)).fetchone()))
+
+
+@app.post("/api/extractions/{extraction_id}/accept")
+def accept_extraction(extraction_id: int, decision: ExtractionAccept):
+    """Turns a reviewed proposal into a lab record with provenance 'extracted' and status 'reviewed' (never 'verified')."""
+    with connection() as conn:
+        row = get_extraction(conn, extraction_id)
+        if row["status"] != "pending":
+            raise HTTPException(409, f"Extraction #{extraction_id} was already {row['status']}")
+        source = get_record(conn, "sources", row["source_id"])
+        if source["document_sha256"] != row["document_sha256"]:
+            raise HTTPException(409, "The source document no longer matches the document this proposal was extracted from")
+        proposed, issues = json.loads(row["proposed_json"]), json.loads(row["issues_json"])
+        final = {k: proposed.get(k) for k in ("date", "test", "value", "unit")} | decision.changes
+        changed = sorted(k for k in decision.changes if decision.changes[k] != proposed.get(k))
+        if (changed or issues) and not decision.reason:
+            raise HTTPException(422, "A reason is required when accepting a proposal that has issues or was corrected")
+        missing = [k for k, v in final.items() if v in (None, "")]
+        if missing:
+            raise HTTPException(422, f"Supply the missing field(s) before accepting: {', '.join(missing)}")
+        try:
+            lab = CREATE_MODELS["labs"].model_validate({**final, "patient_id": row["patient_id"], "source_id": row["source_id"],
+                                                        "anchor_page": row["page"], "anchor_quote": row["original_text"],
+                                                        "anchor_start": row["start"], "anchor_end": row["end"]})
+        except ValidationError as exc:
+            raise validation_error(exc) from exc
+        data = lab.model_dump(mode="json") | {"provenance": "extracted"}
+        check_references(conn, "labs", data)
+        data = apply_evidence(conn, "labs", data)  # re-checks the passage against the stored document text
+        duplicate = conn.execute("""SELECT id FROM labs WHERE patient_id=? AND source_id=? AND date=? AND value=? AND unit=?""",
+                                 (data["patient_id"], data["source_id"], data["date"], data["value"], data["unit"])).fetchone()
+        if duplicate:
+            raise HTTPException(409, f"Duplicate: lab #{duplicate['id']} already records this value from the same source")
+        record = insert_record(conn, "labs", {**data, "extraction_id": row["id"], "verification_status": "reviewed"})
+        accepted = {k: data[k] for k in ("date", "test", "value", "unit")}
+        return {"extraction": _decide(conn, row, "accepted", decision.reason, accepted, record["id"], {
+            "proposed": proposed, "accepted": accepted, "changed_fields": changed, "issues": issues,
+            "record": {"entity": "labs", "id": record["id"]}, "reason": decision.reason}), "record": record}
+
+
+@app.post("/api/extractions/{extraction_id}/reject")
+def reject_extraction(extraction_id: int, decision: ExtractionReject):
+    with connection() as conn:
+        row = get_extraction(conn, extraction_id)
+        if row["status"] != "pending":
+            raise HTTPException(409, f"Extraction #{extraction_id} was already {row['status']}")
+        return _decide(conn, row, "rejected", decision.reason, None, None, {
+            "proposed": json.loads(row["proposed_json"]), "issues": json.loads(row["issues_json"]), "reason": decision.reason})
 
 
 # --- Derived views ------------------------------------------------------------------------------

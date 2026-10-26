@@ -169,3 +169,15 @@ class LabCorrection(BaseModel):
     value: float = Field(allow_inf_nan=False)
     unit: Line = Field(min_length=1, max_length=50)
     reason: Line = Field(min_length=3, max_length=500)
+
+
+class ExtractionAccept(BaseModel):
+    """Optional field corrections at acceptance; a reason is required by the server when anything differs or issues exist."""
+    model_config = Strict
+    changes: dict[Literal["date", "test", "value", "unit"], str | float | None] = Field(default_factory=dict)
+    reason: Line | None = Field(default=None, min_length=3, max_length=500)
+
+
+class ExtractionReject(BaseModel):
+    model_config = Strict
+    reason: Line = Field(min_length=3, max_length=500)
