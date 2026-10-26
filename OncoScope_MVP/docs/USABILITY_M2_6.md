@@ -2,7 +2,7 @@
 
 ## Status
 
-**Human walkthrough: INCOMPLETE.** No independent, nontechnical participant was available during M2.6. The acceptance
+**Human walkthrough: INCOMPLETE (still outstanding after M3.0).** No independent, nontechnical participant was available during M2.6. The acceptance
 criterion "a test participant can complete the tasks without code or database access" is therefore **not met yet**.
 Automated browser tests (`npm run test:e2e`) and the developer's heuristic review below do not substitute for it.
 
@@ -42,8 +42,8 @@ Automated browser tests (`npm run test:e2e`) and the developer's heuristic revie
 | U4 | Evidence regions could only be drawn with a mouse | High (accessibility) | **Fixed:** keyboard region selection and numeric x,y,w,h |
 | U5 | No single place answering "what was recorded on this date?" | High | **Fixed:** Case history date picker with records, documents, conflicts and pending proposals |
 | U6 | Citation-status list pushed the rendered page below the fold | Medium | **Fixed:** one-line summary, expanded automatically when something could not be placed |
-| U7 | Terms such as "provenance", "anchor", "text layer" are developer language | Medium | Open — needs plain-language labels and a glossary, ideally informed by the human session |
+| U7 | Terms such as "provenance", "anchor", "text layer" are developer language | Medium | **Improved in M3.0:** plain labels ("Where this value comes from", "copied from a document", "found automatically, then checked", "not yet checked / checked / verified", "Extracted text", "change history") and a "Words used in OncoScope" glossary on the Overview. Still unvalidated with a real participant |
 | U8 | Long review queues (13+ proposals) require much scrolling; no bulk "accept all issue-free" | Medium | Open — deliberately not added (bulk acceptance weakens per-item review); revisit with user data |
 | U9 | No first-run guidance | Medium | Open |
-| U10 | Colour contrast of badges/overlays on the dark theme not measured | Medium (accessibility) | Open — needs an automated contrast check and screen-reader pass |
+| U10 | Colour contrast of badges/overlays on the dark theme not measured | Medium (accessibility) | **Measured and fixed in M3.0:** 7 text colours were below WCAG AA (lowest 3.25:1); all now ≥ 4.5:1 on every background they can appear on, enforced by `src/contrast.test.ts`. Screen-reader pass still open |
 | U11 | The date strip grows long for many dates | Low | Open |

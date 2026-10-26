@@ -34,11 +34,11 @@ export function ReviewQueue({ patientId, sources, refresh, onDecided, onOpenDocu
       setTexts(Object.fromEntries(loaded.filter(Boolean).map(t => [t!.source_id, t!])));
     }).catch(() => setItems([]));
   }, [patientId, refresh]);
-  if (items === null) return <section className="panel"><h2>Extraction review queue</h2><p className="muted">Loading proposals…</p></section>;
+  if (items === null) return <section className="panel"><h2>Values found in documents — check before saving</h2><p className="muted">Loading proposals…</p></section>;
   const shown = items.filter(e => filter === 'all' || (filter === 'pending' ? e.status === 'pending' : e.status !== 'pending'));
   const pending = items.filter(e => e.status === 'pending').length;
   return <section className="panel">
-    <div className="section-heading"><div><h2>Extraction review queue</h2>
+    <div className="section-heading"><div><h2>Values found in documents — check before saving</h2>
       <p className="muted">Rule-based proposals from fictional lab documents ({items[0] ? `${items[0].parser} v${items[0].parser_version}` : 'ca125-lab'}). Compare each with its original text, then accept, correct, or reject it.</p></div>
       <label className="inline-filter">Show<select value={filter} onChange={e => setFilter(e.target.value as typeof filter)}><option value="pending">pending ({pending})</option><option value="decided">decided</option><option value="all">all</option></select></label></div>
     <div className="integrity-note" role="note"><strong>What accepting means</strong><p>Accepting confirms that the recorded value matches the document text. It does not verify a diagnosis, a clinical conclusion, or that the original document is itself correct. Accepted values are marked “reviewed”; “verified” remains a separate, explicit step.</p></div>

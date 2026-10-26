@@ -108,7 +108,7 @@ function HistoryChart({ series, treatments, timeline, selected, conflictDates, o
           <circle cx={x(p.date)} cy={y(p.value)} r={6} fill={reviewed ? '#94efe0' : '#121f31'} stroke="#94efe0" strokeWidth={2}>
             <title>{p.date}: {formatNumber(p.value)} {p.unit} · lab #{p.id} · {reviewed ? p.verification_status : 'not yet reviewed'} · click for evidence</title></circle>
           {same(p)[0].id === p.id && <text x={x(p.date) + 9} y={y(p.value) - 8} fill="#cfe9e4" fontSize="11">{formatNumber(p.value)}{same(p).length > 1 ? ` ×${same(p).length}` : ''}</text>}</g>; })}
-      {[...new Set(dates)].map(d => <text key={`d-${d}`} x={x(d)} y={H - bottom + 16} textAnchor="middle" fill="#8999ae" fontSize="10">{d.slice(5)}</text>)}
+      {[...new Set(dates)].map(d => <text key={`d-${d}`} x={x(d)} y={H - bottom + 16} textAnchor="middle" fill="#95a6bb" fontSize="10">{d.slice(5)}</text>)}
     </svg>
     <p className="caption">Filled points are reviewed transcriptions; hollow points are not yet reviewed. Dashed lines mark documented treatment dates. ⚠ marks dates where documents disagree. Click a point to see its evidence.</p>
     <details><summary>Charted values ({points.length}) with evidence links</summary><table className="sr-table"><thead><tr><th>Date</th><th>Value</th><th>Review state</th><th>Evidence</th></tr></thead>

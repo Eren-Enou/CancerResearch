@@ -18,14 +18,14 @@ export const entityLabel: Record<Entity, string> = {
 
 const source: FieldSpec = { name: 'source_id', label: 'Original source', type: 'source' };
 export const provenanceLabel: Record<string, string> = {
-  transcribed: 'transcribed from document', extracted: 'extracted + reviewed', user_observation: 'user observation',
+  transcribed: 'copied from a document', extracted: 'found automatically, then checked', user_observation: 'your own note (not from a document)',
 };
 /** Evidence fields shared by every observation. Offsets are re-resolved by the server whenever the quote changes. */
 const evidence: FieldSpec[] = [
-  { name: 'provenance', label: 'Provenance', type: 'select', options: ['transcribed', 'user_observation', 'extracted'] },
-  { name: 'anchor_page', label: 'Document page', type: 'number', optional: true },
-  { name: 'anchor_quote', label: 'Quoted passage (exact text)', type: 'textarea', optional: true },
-  { name: 'anchor_region', label: 'Image/page region x,y,w,h (%)', optional: true },
+  { name: 'provenance', label: 'Where this value comes from', type: 'select', options: ['transcribed', 'user_observation', 'extracted'] },
+  { name: 'anchor_page', label: 'Page in the document', type: 'number', optional: true },
+  { name: 'anchor_quote', label: 'Exact words in the document', type: 'textarea', optional: true },
+  { name: 'anchor_region', label: 'Marked area on the page (x,y,width,height in %)', optional: true },
 ];
 export const editableFields: Record<Entity, FieldSpec[]> = {
   sources: [

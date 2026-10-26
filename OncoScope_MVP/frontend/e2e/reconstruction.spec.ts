@@ -54,7 +54,7 @@ async function openDocument(page: Page, sourceId: number) {
 
 /** Selects an exact passage in the rendered text layer, as a user would with the mouse. */
 async function selectPassage(page: Page, pageNo: number, passage: string) {
-  const textTab = page.getByRole('tab', { name: 'Text layer' });
+  const textTab = page.getByRole('tab', { name: 'Extracted text' });
   if (await textTab.count()) await textTab.click();   // PDFs open on rendered pages; citations are made in the text layer
   const pre = page.getByTestId(`doc-page-${pageNo}`);
   await expect(pre).toContainText(passage);

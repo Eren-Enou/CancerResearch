@@ -5,9 +5,12 @@ import type { AnyRecord, AuditEntry, Entity, Source, Study, VerificationStatus }
 
 type Props = { entity: Entity; record: AnyRecord; sources: Source[]; studies: Study[]; onSaved: () => void };
 
+/** Plain-language names for the review states (stored values stay entered / reviewed / verified). */
+export const statusLabel: Record<VerificationStatus, string> = { entered: 'not yet checked', reviewed: 'checked', verified: 'verified' };
+
 export function StatusBadge({ record }: { record: { revision: number; verification_status: VerificationStatus } }) {
   return <span className="badges">
-    <span className={`badge status-${record.verification_status}`}>{record.verification_status}</span>
+    <span className={`badge status-${record.verification_status}`} title="Checking confirms the value matches its document, not a medical conclusion">{statusLabel[record.verification_status]}</span>
     {record.revision > 1 && <span className="badge corrected" title="Corrected; originals are in the audit history">rev {record.revision}</span>}
   </span>;
 }
@@ -75,9 +78,9 @@ export function RecordTools({ entity, record, sources, studies, onSaved }: Props
         else input = <input type={f.type ?? 'text'} step={f.type === 'number' ? 'any' : undefined} required={!f.optional} value={value} onChange={e => set(e.target.value)} />;
         return <label key={f.name}>{f.label}{input}</label>;
       })}
-      <label>Verification state<select value={status} onChange={e => setStatus(e.target.value as VerificationStatus)}>{['entered', 'reviewed', 'verified'].map(s => <option key={s}>{s}</option>)}</select></label>
+      <label>Checked against the document?<select value={status} onChange={e => setStatus(e.target.value as VerificationStatus)}>{(['entered', 'reviewed', 'verified'] as VerificationStatus[]).map(s => <option key={s} value={s}>{statusLabel[s]}</option>)}</select></label>
       <label>Reason for change (required)<input required minLength={3} value={reason} onChange={e => setReason(e.target.value)} /></label>
-      <p className="caption">Saved as revision {record.revision + 1}. The original values stay in the audit history; a corrected value returns to “entered”.</p>
+      <p className="caption">Saved as version {record.revision + 1}. The earlier values stay in the change history; a corrected value goes back to “not yet checked”.</p>
       {error && <p className="error" role="alert">{error}</p>}
       <button className="primary">Save correction</button>
     </form>}

@@ -166,7 +166,7 @@ test('blank database → sourced records → verified views → audited correcti
   await nav(page, 'Laboratory');
   await page.getByRole('button', { name: `Correct lab #${labId}` }).click();
   const correction = page.getByRole('form', { name: `Correct lab #${labId}` });
-  await correction.getByLabel('Value').fill('78.5');
+  await correction.getByLabel('Value', { exact: true }).fill('78.5');
   await correction.getByLabel('Reason for change (required)').fill('Transcription error: digits swapped (fictional)');
   await correction.getByRole('button', { name: 'Save correction' }).click();
   const labRow = page.getByTestId('lab-row').and(page.locator(`[data-id="${labId}"]`));

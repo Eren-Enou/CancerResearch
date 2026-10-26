@@ -137,7 +137,7 @@ test('M2.6: rendered pages, mapped citations, keyboard regions and the case hist
   // A documented treatment so the history shows it beside the lab values.
   await add.getByLabel('Record type').selectOption('Treatment');
   await add.getByLabel('Original source (required)').selectOption(String(b03));
-  await add.getByLabel('Provenance').selectOption('user_observation');
+  await add.getByLabel('Where this value comes from').selectOption('user_observation');
   await add.getByLabel('Date', { exact: true }).fill('2026-09-04');
   await add.getByLabel('Documented regimen').fill('Fictional regimen X');
   await add.getByRole('button', { name: 'Save record' }).click();

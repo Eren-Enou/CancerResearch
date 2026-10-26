@@ -110,9 +110,9 @@ export function DocumentViewer({ source, observations, focus, onTranscribe, onEx
         {doc?.has_text_layer && <button className="export-link" type="button" onClick={extract}>Propose CA-125 values</button>}</div></div>
     {isPdf && <div className="view-tabs" role="tablist" aria-label="Document view">
       <button type="button" role="tab" aria-selected={mode === 'rendered'} className={mode === 'rendered' ? 'active' : ''} onClick={() => setMode('rendered')}>Rendered pages</button>
-      <button type="button" role="tab" aria-selected={mode === 'text'} className={mode === 'text' ? 'active' : ''} onClick={() => setMode('text')}>Text layer</button></div>}
-    {doc && (!isPdf || mode === 'text') && <p className="caption">Showing the deterministic text layer ({doc.extractor}). Character positions here are what citations and the report refer to; they are not page coordinates. Highlighted passages are cited by records.</p>}
-    {isPdf && mode === 'rendered' && <p className="caption">Showing the original pages rendered by pdf.js. Drag (or use the keyboard) to mark an evidence region on a page. Text-layer citations are highlighted here only where they match exactly one place.</p>}
+      <button type="button" role="tab" aria-selected={mode === 'text'} className={mode === 'text' ? 'active' : ''} onClick={() => setMode('text')}>Extracted text</button></div>}
+    {doc && (!isPdf || mode === 'text') && <p className="caption">Showing the text read from the file ({doc.extractor}). Records point to exact words here, and the report quotes them. Highlighted words are cited by records.</p>}
+    {isPdf && mode === 'rendered' && <p className="caption">Showing the original pages. Drag on a page, or use the keyboard, to mark where a value is written. Words that records point to are highlighted here only when they appear in exactly one place.</p>}
     {isImage && <p className="caption">Drag on the image, or use the keyboard, to mark a region, then transcribe what it shows. Images have no text layer and are never parsed.</p>}
     {error && <p className="error" role="alert">{error}</p>}
     {message && <p className="success" role="status">{message}</p>}
@@ -133,7 +133,7 @@ export function DocumentViewer({ source, observations, focus, onTranscribe, onEx
       <aside className="doc-side">
         <h3>Transcribe from this document</h3>
         {selection ? <div className="selection-box" data-testid="selection">
-          <div className="tiny muted">{selection.quote !== null ? `Text layer: page ${selection.page}, characters ${selection.start}–${selection.end}` : `Rendered page ${selection.page}: region ${selection.region} (x,y,w,h %)`}</div>
+          <div className="tiny muted">{selection.quote !== null ? `Extracted text, page ${selection.page}, characters ${selection.start}–${selection.end}` : `Rendered page ${selection.page}: region ${selection.region} (x,y,w,h %)`}</div>
           {selection.quote !== null && <blockquote>{selection.quote}</blockquote>}
           <div className="transcribe-row">{transcribeKinds.map(k => <button key={k} type="button" className="text-button" onClick={() => transcribe(k)}>As {k.toLowerCase()}</button>)}</div>
           <button type="button" className="text-button" onClick={() => setSelection(null)}>Clear selection</button>

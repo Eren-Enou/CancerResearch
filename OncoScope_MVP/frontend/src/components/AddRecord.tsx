@@ -85,9 +85,9 @@ export function AddRecord({ patientId, sources, studies, onSaved, anchor = null 
         <p className="caption">A synthetic PDF, text or image file can be attached afterwards in Sources; its SHA-256 is recorded.</p>
       </> : <>
         {sourcePicker}
-        <fieldset className="evidence-fields"><legend>Evidence</legend>
-          <label>Provenance<select name="provenance" value={provenance} onChange={e => { setProvenance(e.target.value as typeof provenance); if (e.target.value === 'user_observation') setWhere(noAnchor); }}>
-            <option value="transcribed">Transcribed from the source document</option><option value="user_observation">User observation (not in a document)</option></select></label>
+        <fieldset className="evidence-fields"><legend>Where the value comes from</legend>
+          <label>Where this value comes from<select name="provenance" value={provenance} onChange={e => { setProvenance(e.target.value as typeof provenance); if (e.target.value === 'user_observation') setWhere(noAnchor); }}>
+            <option value="transcribed">Copied from the source document</option><option value="user_observation">My own note (not in a document)</option></select></label>
           {provenance === 'transcribed' && (located || where.region ? <div className="anchor-preview" data-testid="anchor-preview">
               <div className="tiny muted">{located ? `Cites page ${where.page}, characters ${where.start}–${where.end}` : `Cites region ${where.region} (x,y,w,h %)`} of source #{form.source_id}</div>
               {where.quote && <blockquote>{where.quote}</blockquote>}
