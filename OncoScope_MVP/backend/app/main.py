@@ -465,9 +465,9 @@ def run_extraction(source_id: int):
             raise HTTPException(422, "This document has no text layer (image or scanned PDF); transcribe it manually with a region anchor")
         created, existing = [], []
         for proposal in extraction.extract_ca125(pages, source["source_date"]):
-            key = (source_id, extraction.PARSER, extraction.PARSER_VERSION, proposal.page, proposal.start)
-            found = conn.execute("""SELECT * FROM extractions WHERE source_id=? AND parser=? AND parser_version=? AND page=? AND start=?""",
-                                 key).fetchone()
+            # Any parser version that already proposed this passage counts: a new version never duplicates the queue.
+            found = conn.execute("""SELECT * FROM extractions WHERE source_id=? AND parser=? AND page=? AND start=?
+                                    ORDER BY id DESC LIMIT 1""", (source_id, extraction.PARSER, proposal.page, proposal.start)).fetchone()
             if found:
                 existing.append(extraction_view(dict(found)))
                 continue
