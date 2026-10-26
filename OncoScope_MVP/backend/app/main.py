@@ -32,7 +32,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="OncoScope local API", version="0.2.5", lifespan=lifespan,
+    title="OncoScope local API", version="0.3.0", lifespan=lifespan,
     description="Local-only prototype. Organizes sources; does not diagnose, stage, or assess clinical response.",
 )
 # Rejects requests whose Host header is not loopback (DNS-rebinding protection for a local service).

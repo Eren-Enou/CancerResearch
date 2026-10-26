@@ -6,6 +6,11 @@ No real names, dates of birth, patient IDs, pathology records, medical images, s
 
 The app does **not** provide user login, per-user authorization, encryption-at-rest, encrypted backup, cloud synchronization, file ingestion safety checks, or a patient permission workflow. It should not be deployed to Vercel, hosted on a home LAN, or shared publicly. Even on localhost, other software running under the same operating-system account might access its local database.
 
+## M3.0 documents
+`M3_DATA_INVENTORY.md` (where data lives), `M3_THREAT_MODEL.md` (prioritised risks, confirmed defects, limitations),
+`M3_SECURITY_ARCHITECTURE.md` (proposed controls), `M3_1_IMPLEMENTATION_PLAN.md` (first increment), and the regression
+suite `backend/tests/test_security.py`. The repository is **public**: fixtures, screenshots and CI logs must stay fictional.
+
 ## Existing controls
 
 - FastAPI and Vite examples bind to `127.0.0.1`, not `0.0.0.0`.
@@ -20,6 +25,9 @@ The app does **not** provide user login, per-user authorization, encryption-at-r
 - The browser renders PDFs with pdf.js after re-checking the file's SHA-256; XFA is disabled and annotations/scripts are
   not rendered. pdf.js parsing untrusted PDFs in the browser is additional attack surface to review before real documents.
   The legacy build is used for compatibility (polyfills), and should be kept updated.
+- No caching: every `/api` response is `no-store`; no record content in URLs or access logs (regression test runs the real
+  server and searches its log for sentinel values).
+- CI hygiene job blocks committed databases, document stores, backups, documents outside fictional fixtures and secrets.
 - Backups include a verification manifest; restores verify before and after and never overwrite an existing database or
   differing document bytes without keeping them. Backups and the derived `document_text` cache are **unencrypted**.
 - Input constraints and patient/source ownership checks.

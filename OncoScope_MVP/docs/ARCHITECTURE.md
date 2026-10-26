@@ -81,6 +81,16 @@ Every observation (`events`, `labs`, `treatments`, `studies`, `measurements`) ha
 - **Benchmark:** `fixtures/benchmark/make_benchmark.py` and `make_holdout.py` generate fictional documents and manifests;
   `app.benchmark` scores the real pipeline plus an API round trip and lists every non-ideal outcome.
 
+## Security foundations (M3.0)
+
+- All `/api` responses carry `Cache-Control: no-store`, `Pragma: no-cache`, `X-Content-Type-Options: nosniff` and
+  `Referrer-Policy: no-referrer`. Mutations accept JSON only; uploads require `application/octet-stream` and send the
+  filename in `X-Document-Filename`, so no record content travels in URLs (and therefore access logs).
+- `/api/audit/verify` also returns the chain head (entries, last id, last hash); backup manifests record it and restore
+  compares it. Backups and restores refuse document-store entries that are not hash-named files matching their bytes.
+- The proposed M3 architecture (authentication, SQLCipher, AES-GCM documents, key vault, HMAC audit chain, deletion by
+  crypto-shredding, parser sandbox) is in `M3_SECURITY_ARCHITECTURE.md`; it is not implemented yet.
+
 ## Backup and restore
 
 `app.backup` snapshots SQLite through the backup API, copies the document store and writes `manifest.json`

@@ -143,7 +143,7 @@ export default function App() {
       <div className="brand"><div className="brand-mark">◎</div><div><strong>ONCOSCOPE</strong><span>LOCAL RESEARCH WORKSPACE</span></div></div>
       <p className="nav-label">WORKSPACE</p>
       <nav aria-label="Main navigation">{views.map((v, i) => <button className={`nav-item ${view === v ? 'active' : ''}`} aria-current={view === v ? 'page' : undefined} key={v} onClick={() => { setView(v); setAnchorDraft(null); }}><span className="nav-icon" aria-hidden="true">{icons[i]}</span>{v}{v === 'Review' && pendingReviews > 0 && <span className="nav-count" aria-hidden="true">{pendingReviews}</span>}</button>)}</nav>
-      <div className="sidebar-footer"><span className="local-dot" /> Local-only prototype<p>Phase 1 · M2.6 · v0.2.6<br />No automated interpretation</p></div>
+      <div className="sidebar-footer"><span className="local-dot" /> Local-only prototype<p>Phase 1 · M3.0 · v0.3.0<br />No automated interpretation</p></div>
     </aside>
     <main className="main">
       <header className="topbar"><div><div className="eyebrow">CLINICAL RECORDS / {view.toUpperCase()}</div><h1>{view === 'Overview' ? 'Patient overview' : view === 'History' ? 'Case history' : view}</h1></div>
@@ -213,7 +213,7 @@ export default function App() {
                 {(['sources', 'events', 'labs', 'treatments', 'studies', 'measurements', 'audit_log'] as const).map(e => <a key={e} className="export-link" href={`${exportBase}/export/${e}.csv`}>{e}.csv</a>)}</div>
               <details className="new-case"><summary>Create another fictional case</summary><CreateCase onCreated={id => { setPatientId(id); reload(); }} /></details></section></>}
         </>}
-        <footer className="footer">OncoScope 0.2.6 · Local-first prototype · Not for clinical decisions · Verify every observation against original documentation</footer>
+        <footer className="footer">OncoScope 0.3.0 · Local-first prototype · Not for clinical decisions · Verify every observation against original documentation</footer>
       </div>
     </main>
   </div>;

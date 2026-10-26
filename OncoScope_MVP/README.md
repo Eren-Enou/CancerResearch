@@ -1,4 +1,4 @@
-# OncoScope — Phase 1 local prototype (M2.6: document fidelity, extraction reliability, usability)
+# OncoScope — Phase 1 local prototype (M3.0: secure foundations; synthetic data only)
 
 **Status:** Source-linked medical-record organizer built with synthetic data only. Not a medical device or an oncology decision-support tool.
 
@@ -7,6 +7,20 @@
 This repository is intentionally narrow in scope: a **FastAPI + SQLite API and a React + TypeScript dashboard**. It does not contain medical scans, a real patient's information, machine learning, RECIST response logic, or molecular simulation.
 
 ## What's implemented
+
+**M3.0 — secure foundations and release reliability.** This does **not** make OncoScope safe for real patient records.
+- GitHub Actions CI (`.github/workflows/ci.yml`): repository hygiene (no databases, document stores, backups, documents
+  outside fictional fixtures, unlabelled fixtures or secrets), backend tests, main and held-out benchmark gates,
+  TypeScript build and unit tests, and the three Playwright demonstrations on Chromium. No artifacts are uploaded.
+- Sensitive-data inventory (`docs/M3_DATA_INVENTORY.md`), threat model (`docs/M3_THREAT_MODEL.md`), proposed security
+  architecture (`docs/M3_SECURITY_ARCHITECTURE.md`) and the M3.1 plan (`docs/M3_1_IMPLEMENTATION_PLAN.md`); integration
+  order for the open PRs (`docs/M3_INTEGRATION_PLAN.md`).
+- Security regression suite (`backend/tests/test_security.py`) and fixes for five confirmed defects: document filenames in
+  access logs, cacheable API responses, a 500 on tampered document references, restores copying arbitrary files into the
+  document store, and a leftover benchmark database. Known gaps (no authentication, plaintext at rest, audit tail
+  truncation without an external head) are strict expected failures.
+- Encryption proof of concept on fictional data (`poc/`, not used by the app).
+- Plain-language labels, a glossary, and WCAG AA text contrast enforced by a test.
 
 **M2.6 — document fidelity and reliability** (plan: `docs/M2_6_PLAN.md`, benchmark: `docs/benchmark/README.md`)
 
@@ -119,12 +133,12 @@ npm install && npm run dev
 
 ```powershell
 cd OncoScope_MVP\backend
-python -m pytest -q                 # 80 tests: API, migrations, audit, units, evidence, extraction, findings, restore, benchmark
+python -m pytest -q                 # 107 passed + 3 expected failures (documented security gaps)
 python -m app.benchmark             # extraction benchmark against the fictional ground truth (add --holdout for the held-out set)
 
 cd ..\frontend
 npm run build                       # strict TypeScript + production build
-npm test                            # Vitest component/unit tests (27)
+npm test                            # Vitest component/unit tests (29, incl. WCAG contrast)
 npm run test:e2e                    # Playwright: M2, M2.5 and M2.6 demonstrations in a real browser
 ```
 
@@ -150,7 +164,7 @@ For the document-centred M2.5 workflow follow `docs/WALKTHROUGH_M2_5.md`. The ge
 | GET / POST | `/api/patients` | List / create fictional cases (always synthetic) |
 | GET | `/api/patients/{id}/dashboard` | Patient metadata and counts |
 | GET / POST | `/api/patients/{id}/sources` / `/api/sources` | Register source documents |
-| PUT / GET | `/api/sources/{id}/document` | Attach (once) / open a synthetic source file |
+| PUT / GET | `/api/sources/{id}/document` | Attach (once; filename in the `X-Document-Filename` header, URL-encoded) / open a synthetic source file |
 | GET | `/api/sources/{id}/document/verify` | Re-hash the stored file |
 | GET / POST | `/api/patients/{id}/events` / `/api/events` | Clinical event metadata |
 | GET / POST | `/api/patients/{id}/labs` / `/api/labs` | Laboratory observations |
@@ -221,7 +235,8 @@ OncoScope_MVP/
 
 ## Known limitations — read before real data
 
-**Do not import or transcribe real patient data into this version.** This MVP has no authentication, no application-layer database or document encryption, no automatic encrypted backup, no consent workflow, no verified data ingestion from records, no patient access-control boundary, and no production threat model. SQLite content, attached documents and report text are stored unencrypted unless the operating system's disk encryption covers them. Only run on loopback (`127.0.0.1`); do not deploy or expose it on a network.
+**Do not import or transcribe real patient data into this version.** The repository is public; never commit real data.
+See `docs/M3_THREAT_MODEL.md` for prioritised risks. This MVP has no authentication, no application-layer database or document encryption, no automatic encrypted backup, no consent workflow, no verified data ingestion from records, no patient access-control boundary, and no production threat model. SQLite content, attached documents and report text are stored unencrypted unless the operating system's disk encryption covers them. Only run on loopback (`127.0.0.1`); do not deploy or expose it on a network.
 
 - Records cannot be deleted (by design for now); a mistaken record can only be corrected or rejected before acceptance.
 - Restore is a CLI, restores the whole database (all cases), and expects the API to be stopped (not enforced).

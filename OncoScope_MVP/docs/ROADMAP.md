@@ -58,6 +58,25 @@ pre-restore backups, JSON/CSV/Markdown exports, browser memory and downloads, se
 the local machine, and which M3 control (encryption, identity, deletion, sandboxed parsing) addresses it. Every other M3
 item depends on that inventory, and it can be reviewed independently before any security code is written.
 
+## M3.0 — Secure foundations and release reliability
+
+**Status: delivered (documentation, tests and small fixes; no encryption or authentication yet).** CI for all suites,
+data inventory, threat model, proposed security architecture, encryption proof of concept, security regression suite,
+five confirmed defects fixed, plain-language and contrast fixes, PR integration plan. Still open: human usability
+walkthrough, screen-reader review, all controls listed for M3.1/M3.2.
+
+## M3.1 — First security controls (next; synthetic data only)
+
+Protected mode with local identity and per-launch session tokens; key vault (Argon2id, random data key, recovery key);
+SQLCipher-encrypted database with a verified migration; AES-GCM document store and encrypted backups with an independent
+restore test; HMAC audit chain with head receipts; owner-only data directory and loopback-only start-up. Plan and
+acceptance criteria: `M3_1_IMPLEMENTATION_PLAN.md`. Done when the three strict-xfail gap tests pass by design.
+
+## M3.2 — Deletion, isolation and boundaries (planned)
+
+Per-case keys and case deletion by crypto-shredding, sandboxed document parsing, consent records, encrypted exports, DEK
+rotation, Python dependency lock with hashes.
+
 ## M3 — Real-data readiness review (not yet approved)
 
 Work required before the M3 privacy and security review can even start (none of this exists today):
