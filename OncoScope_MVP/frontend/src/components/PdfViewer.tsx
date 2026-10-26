@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import * as pdfjs from 'pdfjs-dist';
-import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+// The legacy build carries polyfills (e.g. Uint8Array.toHex), so pages also render in browsers a few versions old.
+import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
+import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
 import { mapQuote, parseRegionBox, type Mapping, type TextRun } from '../pdfMapping';
 import type { TimelineEntry } from '../types';
 import { RegionSelector, type Overlay } from './RegionSelector';
@@ -100,6 +101,9 @@ export function PdfViewer({ url, expectedSha256, observations, active, selection
       <button type="button" className="secondary" onClick={() => setZoom(z => ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(z) + 1)])} aria-label="Zoom in">+</button>
       <span className="tiny muted" data-testid="pdf-integrity">Rendered with pdf.js · SHA-256 re-verified in this browser</span>
     </div>
+    {mappings.length > 0 && <details className="mapping-summary" open={mappings.some(m => m.kind === 'quote' && m.mapping!.status !== 'mapped')}>
+    <summary data-testid="mapping-summary">Citation locations: {mappings.filter(m => m.kind === 'drawn' || m.mapping!.status === 'mapped').length} shown on the pages,
+      {' '}{mappings.filter(m => m.kind === 'quote' && m.mapping!.status !== 'mapped').length} could not be placed reliably</summary>
     <ul className="mapping-list" aria-label="Citation locations on the rendered pages">
       {mappings.map(m => <li key={m.key} data-testid="citation-mapping" data-key={m.key} data-status={m.kind === 'drawn' ? 'drawn' : m.mapping!.status}
         className={active === m.key ? 'focus' : ''}>
@@ -109,7 +113,7 @@ export function PdfViewer({ url, expectedSha256, observations, active, selection
           : m.mapping!.status === 'no_text' ? 'the rendered page has no text items — not highlighted'
           : 'text-layer citation not found on the rendered page — not highlighted; see the text layer view'}
       </li>)}
-    </ul>
+    </ul></details>}
     <div className="pdf-pages" onScroll={e => {
       // Keep the page indicator in step with scrolling: the last page whose top has passed the viewport's top.
       const top = e.currentTarget.getBoundingClientRect().top + 40;

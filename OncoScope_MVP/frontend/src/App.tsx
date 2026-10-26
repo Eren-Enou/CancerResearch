@@ -184,7 +184,8 @@ export default function App() {
           </>}
           {view === 'Documents' && <div className="documents-layout">
             <nav className="panel doc-list" aria-label="Documents"><h2>Documents</h2>
-              <ImportDocument patientId={patient.id} sources={sources} onImported={id => { setDocFocus({ sourceId: id }); reload(); }} />
+              <details className="import-details" open={docSources.length === 0}><summary>Import a fictional document…</summary>
+                <ImportDocument patientId={patient.id} sources={sources} onImported={id => { setDocFocus({ sourceId: id }); reload(); }} /></details>
               {docSources.length ? docSources.map(s => <button key={s.id} type="button" className={`doc-item ${viewerSource?.id === s.id ? 'active' : ''}`} onClick={() => setDocFocus({ sourceId: s.id })}>
                 <strong>#{s.id} · {s.label}</strong><span className="tiny muted">{s.document_filename} · {timeline.filter(t => t.source_id === s.id).length} record(s)</span></button>)
                 : <p className="muted">No documents attached yet. Attach fictional files in Sources.</p>}</nav>

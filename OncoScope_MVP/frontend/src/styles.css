@@ -63,3 +63,4 @@ tr.uncertain td{background:#2a2316}.secondary{background:#223149;color:#e7ecf5;b
 .day-list{list-style:none;padding:0;display:grid;gap:10px}.day-list li{border-left:3px solid #2b3d52;padding-left:10px}
 .sr-table{margin-top:10px;font-size:12px}.sr-table caption{text-align:left;color:#8ea2bb;font-size:11px;margin-bottom:4px}
 .import-form{display:grid;gap:8px;padding:10px;border:1px dashed #405169;border-radius:8px;margin-bottom:6px}.import-form h3{margin:0;font-size:13px}.import-form label{display:grid;gap:4px;font-size:11px;color:#a9b7ca}
+.mapping-summary{margin:8px 0;font-size:12px}.mapping-summary summary{cursor:pointer;color:#a9b7ca}.import-details summary{cursor:pointer;font-size:12px;font-weight:700;color:#83dfcf;padding:6px 0}
