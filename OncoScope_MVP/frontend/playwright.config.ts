@@ -7,6 +7,7 @@ import { join } from 'node:path';
 const stamp = Date.now();
 process.env.ONCOSCOPE_E2E_DB_M2 ??= join(tmpdir(), `oncoscope-e2e-m2-${stamp}`, 'oncoscope.sqlite3');
 process.env.ONCOSCOPE_E2E_DB_M25 ??= join(tmpdir(), `oncoscope-e2e-m25-${stamp}`, 'oncoscope.sqlite3');
+process.env.ONCOSCOPE_E2E_DB_M26 ??= join(tmpdir(), `oncoscope-e2e-m26-${stamp}`, 'oncoscope.sqlite3');
 const python = process.env.ONCOSCOPE_PYTHON
   ?? (process.platform === 'win32' ? '.venv\\Scripts\\python.exe' : '.venv/bin/python');
 
@@ -39,9 +40,11 @@ export default defineConfig({
   projects: [
     { name: 'm2', testMatch: /demonstration\.spec\.ts/, use: { baseURL: 'http://127.0.0.1:5180' } },
     { name: 'm2.5', testMatch: /reconstruction\.spec\.ts/, use: { baseURL: 'http://127.0.0.1:5181' } },
+    { name: 'm2.6', testMatch: /fidelity\.spec\.ts/, use: { baseURL: 'http://127.0.0.1:5182', viewport: { width: 1440, height: 900 } } },
   ],
   webServer: [
     ...stack(process.env.ONCOSCOPE_E2E_DB_M2, 8010, 5180),
     ...stack(process.env.ONCOSCOPE_E2E_DB_M25, 8011, 5181),
+    ...stack(process.env.ONCOSCOPE_E2E_DB_M26, 8012, 5182),
   ],
 });
