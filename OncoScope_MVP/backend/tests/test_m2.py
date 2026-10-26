@@ -356,7 +356,7 @@ def test_backup_is_non_destructive(client, case, tmp_path):
     first = backup(tmp_path / "backups")
     second = backup(tmp_path / "backups")
     assert first != second and first.exists()
-    copy = sqlite3.connect(first / "blank.sqlite3")
+    copy = sqlite3.connect(first / "oncoscope.sqlite3")
     assert copy.execute("SELECT count(*) FROM labs").fetchone()[0] == 1
     copy.close()
 
