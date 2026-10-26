@@ -48,3 +48,15 @@ response classification or recommendations. Nothing merges to `main` without the
 | E | Case history view + one-step import | Vitest + Playwright | date → observations + documents; chart with treatments, conflicts and unreviewed markers; every value links to evidence |
 | F | Usability | protocol + heuristic review findings; fixes for the top issues | human walkthrough recorded **or explicitly marked incomplete** |
 | G | Regression | all suites | M2 and M2.5 demonstrations still pass |
+
+## Outcome
+
+| # | Result |
+|---|---|
+| A | 26 fictional documents + manifest; corpus tests pass |
+| B | Parser v2.1; v1 baseline recorded (`docs/benchmark/BASELINE_ca125-lab_v1.md`) |
+| C | Gates pass on the main corpus and the held-out set (0 silent errors); held-out recall 28.6%; see `docs/benchmark/README.md` |
+| D | pdf.js viewer with zoom, navigation, in-browser hash check, unique-match highlights, keyboard regions — Playwright verified in Edge 138 |
+| E | Case history + one-step import — Vitest and Playwright verified |
+| F | Protocol written; heuristic issues U1–U6 fixed; **human walkthrough not performed — criterion incomplete** |
+| G | 80 backend, 27 frontend, 3 Playwright demonstrations pass |

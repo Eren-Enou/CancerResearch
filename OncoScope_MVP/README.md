@@ -1,4 +1,4 @@
-# OncoScope — Phase 1 local prototype (M2.5: verified evidence and case reconstruction)
+# OncoScope — Phase 1 local prototype (M2.6: document fidelity, extraction reliability, usability)
 
 **Status:** Source-linked medical-record organizer built with synthetic data only. Not a medical device or an oncology decision-support tool.
 
@@ -7,6 +7,28 @@
 This repository is intentionally narrow in scope: a **FastAPI + SQLite API and a React + TypeScript dashboard**. It does not contain medical scans, a real patient's information, machine learning, RECIST response logic, or molecular simulation.
 
 ## What's implemented
+
+**M2.6 — document fidelity and reliability** (plan: `docs/M2_6_PLAN.md`, benchmark: `docs/benchmark/README.md`)
+
+- **Rendered PDF pages** with pdf.js (legacy build): zoom, page navigation, scrolling; the browser re-hashes the file
+  and refuses to render on a SHA-256 mismatch. The exact text-layer view is one tab away.
+- **Two kinds of location, never conflated**: text-layer citations (page + character offsets, what the report cites)
+  and rendered-page regions (page + x,y,w,h %). A citation is highlighted on the rendered page only if its quote matches
+  exactly one place there; otherwise the viewer says it could not be placed.
+- **Keyboard-accessible region selection** (arrows move, Shift+arrows resize, numeric inputs) on PDF pages and images —
+  the manual transcription path for documents without a text layer
+- **Benchmark corpus**: 26 fictional documents (text, PDF tables, multi-page, two-column, text-free PDF, image,
+  radiology) with a hand-written ground-truth manifest, plus 8 held-out documents written after the parser was frozen
+- **Parser `ca125-lab` v2.1**: layout-tolerant rules (label variants, tables, flags, reference ranges, row dates,
+  collection vs report dates, unit before value, value on next line); flags multiple values, dotted thousands
+  separators, mentions without results; never duplicates proposals across parser versions
+- **Evaluation tool** `python -m app.benchmark [--holdout]`: precision, recall, field and anchor accuracy, ambiguity
+  kept visible, duplicates, findings, and every non-ideal outcome by layout; gate = zero silently incorrect results
+- **Case history view**: date picker with everything recorded that day, supporting documents, pending proposals and
+  conflicts (never resolved); CA-125 chart with treatment dates and unreviewed markers; every value links to evidence
+- **One-step document import** (duplicates refused before anything is created); case and view kept across reloads
+
+**M2.5 — reconstructing a case from documents** (walkthrough: `docs/WALKTHROUGH_M2_5.md`)
 
 **M2.5 — reconstructing a case from documents** (walkthrough: `docs/WALKTHROUGH_M2_5.md`)
 
@@ -97,15 +119,16 @@ npm install && npm run dev
 
 ```powershell
 cd OncoScope_MVP\backend
-python -m pytest -q                 # 60 tests: API, migrations, audit, units, evidence, extraction, findings, restore
+python -m pytest -q                 # 80 tests: API, migrations, audit, units, evidence, extraction, findings, restore, benchmark
+python -m app.benchmark             # extraction benchmark against the fictional ground truth (add --holdout for the held-out set)
 
 cd ..\frontend
 npm run build                       # strict TypeScript + production build
-npm test                            # Vitest component/unit tests (18)
-npm run test:e2e                    # Playwright: M2 and M2.5 demonstrations in a real browser
+npm test                            # Vitest component/unit tests (27)
+npm run test:e2e                    # Playwright: M2, M2.5 and M2.6 demonstrations in a real browser
 ```
 
-`npm run test:e2e` starts two isolated stacks (API 8010 + Vite 5180 for M2, API 8011 + Vite 5181 for M2.5), each on a **new empty database** in the OS temp directory, then drives the UI. The M2.5 run also calls the backup/restore CLI and the report audit script. It uses the installed Microsoft Edge (`PW_CHANNEL=chrome` to use Chrome instead; on non-Windows set `ONCOSCOPE_PYTHON` if the venv is elsewhere). No browser download is needed.
+`npm run test:e2e` starts three isolated stacks (API 8010/8011/8012 + Vite 5180/5181/5182 for M2, M2.5, M2.6), each on a **new empty database** in the OS temp directory, then drives the UI. The M2.6 run saves screenshots to `docs/screenshots/`. The M2.5 run also calls the backup/restore CLI and the report audit script. It uses the installed Microsoft Edge (`PW_CHANNEL=chrome` to use Chrome instead; on non-Windows set `ONCOSCOPE_PYTHON` if the venv is elsewhere). No browser download is needed.
 
 ## User workflow
 
@@ -204,8 +227,10 @@ OncoScope_MVP/
 - Restore is a CLI, restores the whole database (all cases), and expects the API to be stopped (not enforced).
 - The audit hash chain detects edits made outside the app, but anyone with file access can rewrite the whole chain consistently; it is tamper-evident against casual edits, not cryptographically signed.
 - Attached documents are verified by hash, not by content: nothing checks that a document actually says what the transcribed values say.
-- The Documents view shows a PDF's extracted text layer, not its rendered pages; "Open original file" may download rather than display the PDF (served with `Content-Security-Policy: sandbox`; inline rendering not verified). Images and text display inline.
-- Extraction covers CA-125 lines in documents with a text layer only. It is line-based and was tested on the simple fixture layouts; multi-column or table-wrapped PDFs may split or merge lines. There is no OCR: images and scanned PDFs need manual, region-anchored transcription.
+- **The nontechnical-user walkthrough has not been performed** (`docs/USABILITY_M2_6.md`); that M2.6 acceptance criterion is incomplete.
+- Rendered-page highlights for text-layer citations are coarse (whole pdf.js text items) and appear only for unique matches; documents rendered differently by pdf.js and pypdf may show "could not be placed".
+- Extraction covers CA-125 only, from documents with a text layer. On the 8 held-out layouts recall was 28.6%: unfamiliar layouts are usually flagged for manual review rather than read. There is no OCR (`docs/OCR_INVESTIGATION.md`): images and scanned PDFs need manual, region-anchored transcription.
+- The benchmark corpus and parser share an author; main-corpus scores do not demonstrate generalisation.
 - Character offsets refer to the text layer of a specific extractor version (e.g. `pypdf-6.21.2-v1`). Anchors are checked when written; after a pypdf upgrade the text may differ and existing anchors are not re-validated automatically.
 - Region anchors are checked for format and bounds only, never against image content. Drawing a region needs a mouse (no keyboard alternative yet).
 - Findings use exact matching (same test and date, same study date and modality, …); they do not detect the same event recorded on different dates or with different wording.

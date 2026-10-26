@@ -17,6 +17,9 @@ The app does **not** provide user login, per-user authorization, encryption-at-r
 - Export (JSON/CSV) is refused for any case not flagged synthetic; CSV text cells are guarded against formula injection.
 - Extraction is local, deterministic and rule-based (no model, no network). PDF parsing uses pypdf in-process; a malformed
   PDF is reported as unreadable. Parsing untrusted PDFs is attack surface that must be isolated before real documents.
+- The browser renders PDFs with pdf.js after re-checking the file's SHA-256; XFA is disabled and annotations/scripts are
+  not rendered. pdf.js parsing untrusted PDFs in the browser is additional attack surface to review before real documents.
+  The legacy build is used for compatibility (polyfills), and should be kept updated.
 - Backups include a verification manifest; restores verify before and after and never overwrite an existing database or
   differing document bytes without keeping them. Backups and the derived `document_text` cache are **unencrypted**.
 - Input constraints and patient/source ownership checks.

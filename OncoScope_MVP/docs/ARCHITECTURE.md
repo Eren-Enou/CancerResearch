@@ -69,6 +69,18 @@ Every observation (`events`, `labs`, `treatments`, `studies`, `measurements`) ha
 - `evidence.build_findings` derives conflict / duplicate / date / missing-support findings on read; nothing is stored or
   resolved.
 
+## Document fidelity (M2.6)
+
+- **Rendering:** the browser fetches the original bytes, recomputes SHA-256 with WebCrypto, and renders pages with pdf.js
+  (`pdfjs-dist` legacy build, XFA disabled) only if the hash matches the record.
+- **Locations:** a *text-layer citation* (page + offsets into the server's pypdf text, `anchor_quote/start/end`) and a
+  *rendered-page region* (page + `x,y,w,h` %, `anchor_region`) are different things. `pdfMapping.mapQuote` places a
+  text-layer citation on the rendered page only when the collapsed-whitespace quote (then, failing that, a
+  whitespace-free comparison) matches exactly one run of pdf.js text items; ambiguous, absent or text-free cases are shown
+  as "could not be placed" and never highlighted.
+- **Benchmark:** `fixtures/benchmark/make_benchmark.py` and `make_holdout.py` generate fictional documents and manifests;
+  `app.benchmark` scores the real pipeline plus an API round trip and lists every non-ideal outcome.
+
 ## Backup and restore
 
 `app.backup` snapshots SQLite through the backup API, copies the document store and writes `manifest.json`
@@ -102,6 +114,8 @@ not correctable. The audit entry stores the complete before and after rows, the 
 - **Documents:** text layer or image of each attached file, cited passages/regions highlighted, selection → anchored transcription, CA-125 proposal button.
 - **Review:** extraction proposals beside their original text; accept / correct / reject with reasons.
 - **Evidence:** findings, records per date and per document, consecutive value differences.
+- **History:** date picker → everything recorded that day with documents, conflicts and pending proposals; CA-125 chart with treatment dates and unreviewed markers.
+- **Documents (M2.6):** rendered PDF pages (zoom, navigation) or text layer; pointer or keyboard region selection; one-step import.
 - **Add record:** typed forms that require the user to register and select a source first.
 
 ## Validation and interpretation boundaries

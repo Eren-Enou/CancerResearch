@@ -44,6 +44,20 @@ Remaining from M2/M2.5: OCR or rendered-PDF viewing, multi-layout extraction bey
 region drawing and a full accessibility audit, re-validation of anchors after extractor upgrades, a nontechnical-user
 session of the exit test.
 
+## M2.6 — Document fidelity, extraction reliability and usability
+
+**Status: delivered on synthetic data except the human usability session.** Rendered PDF viewer with honest citation
+mapping and keyboard regions, 26-document benchmark with ground truth plus an 8-document held-out set, parser v2.1,
+evaluation tool (zero silent errors on both sets; held-out recall 28.6%), case history view, one-step import.
+Tests: 80 backend, 27 frontend, 3 Playwright demonstrations. **Open:** the nontechnical-user walkthrough
+(`docs/USABILITY_M2_6.md`), plain-language labels, contrast/screen-reader review, OCR (investigated only).
+
+**Smallest practical next step toward M3:** write a one-page *data inventory and threat model* (docs only, no code):
+every place fictional record content exists — SQLite, the document store, the `document_text` cache, backups and
+pre-restore backups, JSON/CSV/Markdown exports, browser memory and downloads, server logs — who/what can read each on
+the local machine, and which M3 control (encryption, identity, deletion, sandboxed parsing) addresses it. Every other M3
+item depends on that inventory, and it can be reviewed independently before any security code is written.
+
 ## M3 — Real-data readiness review (not yet approved)
 
 Work required before the M3 privacy and security review can even start (none of this exists today):
