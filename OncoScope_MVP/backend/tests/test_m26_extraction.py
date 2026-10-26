@@ -74,3 +74,11 @@ def test_benchmark_gates_pass_and_report_is_complete():
     assert result["pipeline"]["anchor_accuracy"] == 1.0
     md = benchmark.to_markdown(result)
     assert "## Every non-ideal outcome" in md and "Results by layout" in md
+
+
+def test_holdout_has_no_silent_errors_and_reports_every_miss():
+    """Held-out documents were written after v2 was frozen; recall there is reported, not tuned, but nothing may be silent."""
+    root = benchmark.BENCH / "holdout"
+    result = benchmark.run(root / "manifest.json", root / "documents")
+    assert result["pipeline"]["silent_incorrect"] == 0 and result["system"]["accepted_incorrect"] == []
+    assert all(r["proposal"] for r in result["pipeline"]["rows"])       # every expected statement surfaced in the queue

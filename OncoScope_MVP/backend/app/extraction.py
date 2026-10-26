@@ -18,9 +18,10 @@ from datetime import date
 from .units import rule_for
 
 PARSER = "ca125-lab"
-PARSER_VERSION = "2"
+PARSER_VERSION = "2.1"
 
-TEST_PATTERN = re.compile(r"\b(?:CA[\s-]?125|cancer\s+antigen\s+125)\b", re.IGNORECASE)
+# Letters may not precede the name, but digits may: PDF text layers sometimes glue cells together ("U/mL88CA-125").
+TEST_PATTERN = re.compile(r"(?<![A-Za-z])(?:CA[\s-]?125|cancer\s+antigen\s+125)(?!\d)", re.IGNORECASE)
 NUMBER = r"\d+(?:[.,]\d+)*"
 RESULT_PATTERN = re.compile(
     r"^\s*(?:\((?P<paren>[^)]*)\))?\s*(?:(?:result|value)\b\s*)?[:=]?\s*(?P<cmp>[<>≤≥]=?)?\s*(?P<num>" + NUMBER + r")"
@@ -194,6 +195,8 @@ def _read_result(p: Proposal, rest: str, next_line: str | None) -> bool:
         p.issue("value_qualifier", f"Result is reported as '{cmp_}{num}', a bound rather than a measured value; it is not converted to a number")
     elif "," in num:
         p.issue("value_separator", f"'{num}' uses a comma; decimal vs thousands separator cannot be decided")
+    elif re.fullmatch(r"\d{1,3}\.\d{3}", num):
+        p.issue("value_separator", f"'{num}' may use '.' as a thousands separator (as in many European reports); it is not read as a number")
     else:
         p.fields["value"] = float(num)
     if unit_hint and unit and unit != unit_hint:
