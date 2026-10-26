@@ -250,8 +250,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Score CA-125 extraction against the fictional benchmark ground truth")
     parser.add_argument("--json", type=Path)
     parser.add_argument("--markdown", type=Path)
+    parser.add_argument("--holdout", action="store_true", help="score the held-out set written after the parser was frozen")
     args = parser.parse_args()
-    result = run()
+    root = BENCH / "holdout" if args.holdout else BENCH
+    result = run(root / "manifest.json", root / "documents")
     if args.json:
         args.json.write_text(json.dumps(result, indent=2, default=str), encoding="utf-8")
     md = to_markdown(result)

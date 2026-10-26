@@ -1,0 +1,5 @@
+FICTIONAL DOCUMENT - SYNTHETIC TEST DATA - NOT A REAL PATIENT
+FICTIONAL REGIONAL LAB
+Patient: Fictional Case M26
+
+Result for CA-125 (serum): 98 U/mL, collected on 2026-09-12

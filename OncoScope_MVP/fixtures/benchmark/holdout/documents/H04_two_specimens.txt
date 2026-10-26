@@ -1,0 +1,7 @@
+FICTIONAL DOCUMENT - SYNTHETIC TEST DATA - NOT A REAL PATIENT
+FICTIONAL REGIONAL LAB
+Patient: Fictional Case M26
+Specimen 1 - Collection date: 2026-09-01
+CA-125   140   U/mL
+Specimen 2 - Collection date: 2026-09-15
+CA-125   120   U/mL

@@ -1,0 +1,259 @@
+{
+  "format": "oncoscope-benchmark-manifest",
+  "version": 1,
+  "case": "Fictional Case M26 (held-out)",
+  "notice": "Held-out fictional documents written after parser v2 was frozen. Not used for tuning.",
+  "documents": [
+    {
+      "id": "H01",
+      "file": "H01_tumour_marker_lowercase_unit.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text, lowercase unit spelling",
+      "patterns": [
+        "unit-spelling"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 61.4,
+          "unit": null,
+          "date": "2026-09-03",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "61.4 U/ml",
+          "status": "flagged",
+          "expected_issues": [
+            "unit_not_accepted"
+          ],
+          "note": "U/ml is a case variant; policy keeps it out until a person confirms"
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "2fe10fe6289a70dfd2494bca80e633aa11158d0789e8573e515db757fce3e8e2"
+    },
+    {
+      "id": "H02",
+      "file": "H02_pipe_table_date_column.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "pipe table, date column after unit",
+      "patterns": [
+        "table",
+        "row-dates"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 75,
+          "unit": "U/mL",
+          "date": "2026-09-03",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "| CA-125  | 75",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "6a6cf537dfa81ede7b94a2893924405b61ded00a28276c153e170575ee8a109d"
+    },
+    {
+      "id": "H03",
+      "file": "H03_sentence_result.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "single sentence with specimen note",
+      "patterns": [
+        "specimen-note"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 98,
+          "unit": "U/mL",
+          "date": "2026-09-12",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "98 U/mL",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "fce2c0ec28f44f11a489de7b9d2fc18b2a94c8de682ffef5f4611c166c4698d8"
+    },
+    {
+      "id": "H04",
+      "file": "H04_two_specimens.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "two specimens with prefixed date labels",
+      "patterns": [
+        "multiple-specimens"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 140,
+          "unit": "U/mL",
+          "date": "2026-09-01",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "140",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        },
+        {
+          "test": "CA-125",
+          "value": 120,
+          "unit": "U/mL",
+          "date": "2026-09-15",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "120",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "ec43c8bf03f2d4392b40bdc0f38c1531613e2d81788b0b9d97f0581fac7aa4b9"
+    },
+    {
+      "id": "H05",
+      "file": "H05_continental_thousands.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "dotted thousands separator",
+      "patterns": [
+        "thousands-separator"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": null,
+          "unit": "U/mL",
+          "date": "2026-09-22",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "1.234",
+          "status": "flagged",
+          "expected_issues": [
+            "value_separator"
+          ],
+          "note": "in this fictional continental report 1.234 means one thousand two hundred thirty-four; the text alone cannot say"
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "a4e34295e0cd180d81d25c751ea9bc13dddf03f512d5390791f1fb8988a32578"
+    },
+    {
+      "id": "H06",
+      "file": "H06_pdf_cells_out_of_order.pdf",
+      "media_type": "application/pdf",
+      "category": "lab",
+      "layout": "PDF row whose cells are drawn right-to-left",
+      "patterns": [
+        "pdf",
+        "content-order"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 88,
+          "unit": "U/mL",
+          "date": "2026-09-08",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "88",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "507388fe714dc3698a668995942e16d3dc780e5ca859c3f31ba6915178574fc3"
+    },
+    {
+      "id": "H07",
+      "file": "H07_unit_label_colon.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "unit in parentheses then colon",
+      "patterns": [
+        "unit-before-value"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 64,
+          "unit": "U/mL",
+          "date": "2026-09-20",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "CA-125 (U/mL): 64",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "ec4e68eec2959be290937b3ac9d4911668b1a723448fa26a89e78adb69682e1f"
+    },
+    {
+      "id": "H08",
+      "file": "H08_letter_with_value.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "narrative sentence with a value",
+      "patterns": [
+        "narrative-value"
+      ],
+      "text_layer": true,
+      "source_date": "2026-08-25",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 57,
+          "unit": "U/mL",
+          "date": "2026-08-20",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "57 U/mL",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "dacbd312583d4c4481dfa97fcab5893694714f5abac2099523eb8736cd72e096"
+    }
+  ],
+  "expected_findings": []
+}
