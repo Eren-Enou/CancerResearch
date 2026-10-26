@@ -37,6 +37,8 @@ Future Phase 4: Simulation sandbox using synthetic/abstract inputs
 | `measurements` | study_id, lesion_key, site, long_axis_mm, short_axis_mm, source_id | One key per study, >0 dimensions; source/patient verified |
 | `audit_log` | entity_type, entity_id, patient_id, action, detail_json, reason, recorded_at, prev_hash, entry_hash | Append-only (SQLite triggers); SHA-256 hash chain; actions `create`, `correct`, `status`, `attach_document` |
 | `schema_migrations` | version, name, applied_at | Mirrors `PRAGMA user_version` |
+| `extractions` | source_id, document_sha256, parser, parser_version, page, start, end, original_text, proposed_json, issues_json, status, accepted_json, decision_reason, record_id | Proposals only; records are created by an audited accept |
+| `document_text` | document_sha256, extractor, page, text | Derived cache; reproducible from the original file |
 
 Since migration 2, every patient and record row also has a random `uid` (stable across exports), and every record row has
 `revision` (starts at 1, +1 per correction), `verification_status` (`entered`/`reviewed`/`verified`) and `updated_at`.
@@ -48,12 +50,73 @@ Sources preserve metadata about originals and, optionally, one attached syntheti
 content-addressed under `backend/data/documents/<sha256[:2]>/<sha256>` (configurable with `ONCOSCOPE_DOCUMENT_DIR`), cannot be
 replaced once attached, and are re-hashed whenever they are served.
 
+## Evidence model (migration 3)
+
+Every observation (`events`, `labs`, `treatments`, `studies`, `measurements`) has `provenance`
+(`transcribed` | `extracted` | `user_observation`) and an optional anchor: `anchor_page`, `anchor_quote`,
+`anchor_start`/`anchor_end` (character offsets into that page of the document's text layer) or `anchor_region`
+(`x,y,w,h` percent of the page/image), plus `extraction_id` for accepted proposals.
+
+- `document_text(document_sha256, extractor, page, text)` caches the deterministic text layer. It is derived data keyed by
+  the file hash and extractor version (`utf8-text-v1`, `pypdf-<version>-v1`); originals are never modified.
+- Anchor rules (server-side, on create and on every correction): the source must have a document; a quote must occur on
+  the stated page (or uniquely in the document) and is stored with resolved offsets; given offsets must match the quote
+  exactly; text documents take quotes, images take regions, PDFs take either; user observations take no anchor.
+- `extractions` holds proposals: original text, page, offsets, proposed fields, issues, parser name/version, document hash,
+  status (`pending` → `accepted` | `rejected`), accepted fields, reason, and the created record. Unique per
+  (source, parser, version, page, start), so re-running is idempotent. Accepting re-validates the full lab record (units,
+  dates, anchor against the stored text) and refuses duplicates from the same source.
+- `evidence.build_findings` derives conflict / duplicate / date / missing-support findings on read; nothing is stored or
+  resolved.
+
+## Document fidelity (M2.6)
+
+- **Rendering:** the browser fetches the original bytes, recomputes SHA-256 with WebCrypto, and renders pages with pdf.js
+  (`pdfjs-dist` legacy build, XFA disabled) only if the hash matches the record.
+- **Locations:** a *text-layer citation* (page + offsets into the server's pypdf text, `anchor_quote/start/end`) and a
+  *rendered-page region* (page + `x,y,w,h` %, `anchor_region`) are different things. `pdfMapping.mapQuote` places a
+  text-layer citation on the rendered page only when the collapsed-whitespace quote (then, failing that, a
+  whitespace-free comparison) matches exactly one run of pdf.js text items; ambiguous, absent or text-free cases are shown
+  as "could not be placed" and never highlighted.
+- **Benchmark:** `fixtures/benchmark/make_benchmark.py` and `make_holdout.py` generate fictional documents and manifests;
+  `app.benchmark` scores the real pipeline plus an API round trip and lists every non-ideal outcome.
+
+## Security foundations (M3.0)
+
+- All `/api` responses carry `Cache-Control: no-store`, `Pragma: no-cache`, `X-Content-Type-Options: nosniff` and
+  `Referrer-Policy: no-referrer`. Mutations accept JSON only; uploads require `application/octet-stream` and send the
+  filename in `X-Document-Filename`, so no record content travels in URLs (and therefore access logs).
+- `/api/audit/verify` also returns the chain head (entries, last id, last hash); backup manifests record it and restore
+  compares it. Backups and restores refuse document-store entries that are not hash-named files matching their bytes.
+- The proposed M3 architecture (authentication, SQLCipher, AES-GCM documents, key vault, HMAC audit chain, deletion by
+  crypto-shredding, parser sandbox) is in `M3_SECURITY_ARCHITECTURE.md`; it is not implemented yet.
+
+## Protected access (M3.1-A)
+
+- `app/auth.py`: single local owner (`local_owner`, Argon2id verifier from `argon2-cffi`), in-memory sessions keyed by
+  the token's SHA-256, idle/lifetime expiry, unlock rate limiting. No cryptographic code of OncoScope's own.
+- `access_control` middleware (every request): refuses non-loopback peers and foreign origins; in protected mode requires
+  a valid bearer session except for health, auth status, setup and unlock; sets `db.current_actor` for the request.
+  `db.audit()` writes that actor and refuses to write without one in protected mode.
+- `ONCOSCOPE_MODE=demo` is the explicit, unauthenticated demonstration mode with its own default database; it refuses a
+  database that has an owner.
+- Frontend: `Root.tsx` gates the workspace behind `LockScreen.tsx`; `api.ts` holds the token in memory and fetches
+  documents/exports as blobs. Details: `M3_1A_PROTECTED_ACCESS.md`.
+
+## Backup and restore
+
+`app.backup` snapshots SQLite through the backup API, copies the document store and writes `manifest.json`
+(schema version, `PRAGMA integrity_check`, audit-chain verification, per-table row count and SHA-256 of all rows,
+per-document hash check). `app.restore` verifies the backup against its manifest, refuses conflicts in the target
+document store, backs up any existing target first, restores, and compares the restored copy with the manifest.
+
 ## Migrations
 
 `db.MIGRATIONS` is an ordered list of `(version, name, function)`. `init_db()` (run at API start-up and by the seed script) applies
 each pending migration in its own transaction, records it in `schema_migrations`, and sets `PRAGMA user_version`. Migration 1 is the
 Phase 1 schema with `IF NOT EXISTS`, so unversioned Phase 1 databases adopt it unchanged; migration 2 adds the M2 columns, backfills
-uids, audit `patient_id`/`reason` and the hash chain, then installs the append-only triggers. A database newer than the code is
+uids, audit `patient_id`/`reason` and the hash chain, then installs the append-only triggers; migration 3 adds evidence anchors, provenance and the review queue; migration 4
+adds `local_owner` and the audit actor columns (actors are hashed only when present, so earlier entry hashes are unchanged). A database newer than the code is
 refused. Released migrations are never edited; schema changes append a new migration and a test that upgrades an older database.
 
 ## Corrections
@@ -71,6 +134,11 @@ not correctable. The audit entry stores the complete before and after rows, the 
 - **Imaging:** text radiology reports and manually sourced lesion measurement differences by stable lesion key; no DICOM viewer yet.
 - **Sources:** source IDs, kind, document date, origin, attached document hash and verification, citing records.
 - **Audit:** all audit entries with field-level before → after values and hash-chain status.
+- **Documents:** text layer or image of each attached file, cited passages/regions highlighted, selection → anchored transcription, CA-125 proposal button.
+- **Review:** extraction proposals beside their original text; accept / correct / reject with reasons.
+- **Evidence:** findings, records per date and per document, consecutive value differences.
+- **History:** date picker → everything recorded that day with documents, conflicts and pending proposals; CA-125 chart with treatment dates and unreviewed markers.
+- **Documents (M2.6):** rendered PDF pages (zoom, navigation) or text layer; pointer or keyboard region selection; one-step import.
 - **Add record:** typed forms that require the user to register and select a source first.
 
 ## Validation and interpretation boundaries

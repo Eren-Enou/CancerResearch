@@ -5,7 +5,8 @@ import { RecordTools } from './RecordTools';
 import type { Lab, LabSeries, Source } from '../types';
 
 const meta = { uid: 'u', revision: 1, verification_status: 'entered' as const, entered_at: '2026-09-01T00:00:00Z', updated_at: null };
-const lab = (id: number, date: string, value: number, unit = 'U/mL'): Lab => ({ id, date, test: 'CA-125', value, unit, source_id: 1, ...meta });
+const evidence = { provenance: 'transcribed' as const, anchor_page: null, anchor_quote: null, anchor_start: null, anchor_end: null, anchor_region: null };
+const lab = (id: number, date: string, value: number, unit = 'U/mL'): Lab => ({ id, date, test: 'CA-125', value, unit, source_id: 1, ...meta, ...evidence });
 const sources: Source[] = [{ id: 1, label: 'Fictional printout', kind: 'lab', source_date: null, note: '', origin: '', document_sha256: null, document_filename: null, document_media_type: null, document_size: null, ...meta }];
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });

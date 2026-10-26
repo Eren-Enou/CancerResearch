@@ -251,7 +251,7 @@ def test_audit_log_append_only_and_tamper_evident(client, case):
         conn.execute("DROP TRIGGER audit_log_no_update")
         conn.execute("UPDATE audit_log SET detail_json='{}' WHERE id=3")
     result = ok(client.get("/api/audit/verify"))
-    assert result == {"valid": False, "entries_checked": 2, "first_invalid_id": 3}
+    assert {k: result[k] for k in ("valid", "entries_checked", "first_invalid_id")} == {"valid": False, "entries_checked": 2, "first_invalid_id": 3}
     assert "FAILED at entry #3" in client.get(f"/api/patients/{case['pid']}/report.md").text
 
 
@@ -325,7 +325,7 @@ def test_source_document_hash_and_integrity(client, case):
     sid = case["src"]["id"]
     url = f"/api/sources/{sid}/document"
     put = lambda body, name="fictional.pdf", ctype="application/octet-stream": client.put(
-        url, params={"filename": name}, content=body, headers={"Content-Type": ctype})
+        url, content=body, headers={"Content-Type": ctype, "X-Document-Filename": name})
     assert put(PDF, ctype="text/plain").status_code == 415
     assert put(b"<html><script>alert(1)</script></html>", "fictional.html").status_code == 422
     assert put(b"not really a pdf", "fictional.pdf").status_code == 422
@@ -356,7 +356,7 @@ def test_backup_is_non_destructive(client, case, tmp_path):
     first = backup(tmp_path / "backups")
     second = backup(tmp_path / "backups")
     assert first != second and first.exists()
-    copy = sqlite3.connect(first / "blank.sqlite3")
+    copy = sqlite3.connect(first / "oncoscope.sqlite3")
     assert copy.execute("SELECT count(*) FROM labs").fetchone()[0] == 1
     copy.close()
 
@@ -377,7 +377,7 @@ def test_phase1_database_migrates_in_place(tmp_path, monkeypatch):
     db.init_db()  # idempotent
     with db.connection() as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
-        assert [r[0] for r in conn.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2]
+        assert [r[0] for r in conn.execute("SELECT version FROM schema_migrations ORDER BY version")] == list(range(1, db.SCHEMA_VERSION + 1))
         lab = dict(conn.execute("SELECT * FROM labs").fetchone())
         assert (lab["value"], lab["unit"], lab["revision"], lab["verification_status"]) == (42, "U/mL", 1, "entered")
         assert len(lab["uid"]) == 36

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { request, uploadDocument } from '../api';
+import { openFile, request, uploadDocument } from '../api';
 import type { AnyRecord, AuditEntry, AuditVerification, Entity, Source, Study } from '../types';
-import { AuditDetail, RecordTools, StatusBadge } from './RecordTools';
+import { AuditDetail, RecordTools, StatusBadge, actorText } from './RecordTools';
 
 export function SourceReference({ id, sources }: { id: number | null; sources: Source[] }) {
   if (id === null) return <span className="muted">—</span>;
@@ -38,7 +38,7 @@ function SourceCard({ source: s, cited, sources, studies, onSaved }: Shared & { 
     <p className="muted">Document date: {s.source_date || 'Not recorded'}{s.origin ? ` · Origin: ${s.origin}` : ''}</p>
     {s.note && <p className="caption">{s.note}</p>}
     {s.document_sha256 ? <div className="doc-line">
-      <a href={`/api/sources/${s.id}/document`} target="_blank" rel="noreferrer">Open {s.document_filename}</a> · {s.document_size} bytes
+      <button type="button" className="text-button" onClick={() => openFile(`/sources/${s.id}/document`).catch(e => setError(e.message))}>Open {s.document_filename}</button> · {s.document_size} bytes
       <div className="hash" title={s.document_sha256}>SHA-256 {s.document_sha256}</div>
       <button className="text-button" type="button" onClick={verify}>Verify hash</button>{check && <span className="tiny" role="status"> {check}</span>}
     </div> : <label className="attach">Attach synthetic document<input type="file" accept=".pdf,.txt,.png,.jpg,.jpeg" onChange={e => attach(e.target.files?.[0])} /></label>}
@@ -62,7 +62,7 @@ export function AuditView({ patientId, refresh }: { patientId: number; refresh: 
     <label className="inline-filter">Show<select value={filter} onChange={e => setFilter(e.target.value)}>{['all', 'create', 'correct', 'status', 'attach_document'].map(a => <option key={a}>{a}</option>)}</select></label></div>
     {chain && <p className={chain.valid ? 'success' : 'error'} role="status">{chain.valid ? `Hash chain verified (${chain.entries_checked} entries).` : `Hash chain FAILED at entry #${chain.first_invalid_id}.`}</p>}
     <div className="audit-list">{shown.map(e => <div key={e.id} className="history-entry" data-testid="audit-entry" data-action={e.action}>
-      <span className="date-label">#{e.id} · {e.recorded_at} · {e.action.toUpperCase()} · {e.entity_type} #{e.entity_id}</span>
+      <span className="date-label">#{e.id} · {e.recorded_at} · {e.action.toUpperCase()} · {e.entity_type} #{e.entity_id} · <span data-testid="audit-actor">{actorText(e)}</span></span>
       <AuditDetail entry={e} />
     </div>)}</div>
   </section>;

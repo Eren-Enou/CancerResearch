@@ -1,0 +1,55 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 5 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 7 0 R >> >> >>
+endobj
+4 0 obj
+<< /Length 430 >>
+stream
+BT /F1 11 Tf 1 0 0 1 50 740 Tm (FICTIONAL DOCUMENT - SYNTHETIC TEST DATA - NOT A REAL PATIENT) Tj ET
+BT /F1 11 Tf 1 0 0 1 50 724 Tm (NORTHWIND FICTIONAL LABS) Tj ET
+BT /F1 11 Tf 1 0 0 1 50 708 Tm (Patient: Fictional Case M26) Tj ET
+BT /F1 11 Tf 1 0 0 1 50 692 Tm (Collection date: 2026-10-09) Tj ET
+BT /F1 11 Tf 1 0 0 1 50 676 Tm (Report date: 2026-10-10) Tj ET
+BT /F1 11 Tf 1 0 0 1 50 660 Tm (Results are listed on page 2.) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 6 0 R /Resources << /Font << /F1 7 0 R >> >> >>
+endobj
+6 0 obj
+<< /Length 419 >>
+stream
+BT /F1 11 Tf 1 0 0 1 50 740 Tm (FICTIONAL DOCUMENT - SYNTHETIC TEST DATA - NOT A REAL PATIENT) Tj ET
+BT /F1 11 Tf 1 0 0 1 50 724 Tm (RESULTS) Tj ET
+BT /F1 10 Tf 1 0 0 1 50 690 Tm (Test) Tj ET
+BT /F1 10 Tf 1 0 0 1 200 690 Tm (Result) Tj ET
+BT /F1 10 Tf 1 0 0 1 280 690 Tm (Units) Tj ET
+BT /F1 10 Tf 1 0 0 1 50 672 Tm (CA-125) Tj ET
+BT /F1 10 Tf 1 0 0 1 200 672 Tm (174) Tj ET
+BT /F1 10 Tf 1 0 0 1 280 672 Tm (U/mL) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000247 00000 n 
+0000000728 00000 n 
+0000000854 00000 n 
+0000001324 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+1421
+%%EOF

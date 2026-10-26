@@ -1,8 +1,18 @@
 """Creates a clearly fictional dataset. Never substitutes for actual patient records."""
-from .db import connection, init_db, insert_record
+from .db import DEMO_ACTOR, app_mode, connection, current_actor, init_db, insert_record
 
 
 def seed() -> None:
+    if app_mode() != "demo":
+        raise SystemExit("Seeding writes fictional records; run it in demonstration mode (ONCOSCOPE_MODE=demo).")
+    marker = current_actor.set(DEMO_ACTOR)
+    try:
+        _seed()
+    finally:
+        current_actor.reset(marker)
+
+
+def _seed() -> None:
     init_db()
     with connection() as conn:
         existing = conn.execute("SELECT id FROM patients WHERE label='Synthetic Case A'").fetchone()

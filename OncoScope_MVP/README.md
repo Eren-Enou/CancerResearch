@@ -1,4 +1,4 @@
-# OncoScope — Phase 1 local prototype (M2 hardening)
+# OncoScope — Phase 1 local prototype (M3.1-A: protected local access; synthetic data only)
 
 **Status:** Source-linked medical-record organizer built with synthetic data only. Not a medical device or an oncology decision-support tool.
 
@@ -7,6 +7,82 @@
 This repository is intentionally narrow in scope: a **FastAPI + SQLite API and a React + TypeScript dashboard**. It does not contain medical scans, a real patient's information, machine learning, RECIST response logic, or molecular simulation.
 
 ## What's implemented
+
+**M3.1-A — protected local access and audit identity** (`docs/M3_1A_PROTECTED_ACCESS.md`). **Records are still not
+encrypted at rest**; anyone who can read `backend/data/` can read them without the passphrase.
+- Protected mode (the default): first launch creates a single local owner with a passphrase (Argon2id verifier via
+  `argon2-cffi`); unlocking opens a short-lived in-memory session (bearer token, 15 min idle / 8 h maximum, one at a time).
+  Every API route except health, auth status, setup and unlock answers 401 without it. Lock revokes it at once.
+- Wrong passphrases are rate limited (429 with a growing delay); foreign web origins and non-loopback peers get 403.
+- Every new audit entry records the authenticated owner; entries from before schema v4 stay "unknown".
+- Lock screen; the UI locks itself on inactivity, at the end of the session lifetime and on any 401, and discards all
+  case data it held. Documents, PDF pages, images, reports and exports are fetched with the session header (no tokens in
+  URLs, storage or cookies).
+- Demonstration mode (`ONCOSCOPE_MODE=demo`) stays available for fictional demos and tests, uses its own database and
+  refuses to open a database that has a local owner.
+
+**M3.0 — secure foundations and release reliability.** This does **not** make OncoScope safe for real patient records.
+- GitHub Actions CI (`.github/workflows/ci.yml`): repository hygiene (no databases, document stores, backups, documents
+  outside fictional fixtures, unlabelled fixtures or secrets), backend tests, main and held-out benchmark gates,
+  TypeScript build and unit tests, and the three Playwright demonstrations on Chromium. No artifacts are uploaded.
+- Sensitive-data inventory (`docs/M3_DATA_INVENTORY.md`), threat model (`docs/M3_THREAT_MODEL.md`), proposed security
+  architecture (`docs/M3_SECURITY_ARCHITECTURE.md`) and the M3.1 plan (`docs/M3_1_IMPLEMENTATION_PLAN.md`); integration
+  order for the open PRs (`docs/M3_INTEGRATION_PLAN.md`).
+- Security regression suite (`backend/tests/test_security.py`) and fixes for five confirmed defects: document filenames in
+  access logs, cacheable API responses, a 500 on tampered document references, restores copying arbitrary files into the
+  document store, and a leftover benchmark database. Known gaps (no authentication, plaintext at rest, audit tail
+  truncation without an external head) are strict expected failures.
+- Encryption proof of concept on fictional data (`poc/`, not used by the app).
+- Plain-language labels, a glossary, and WCAG AA text contrast enforced by a test.
+
+**M2.6 — document fidelity and reliability** (plan: `docs/M2_6_PLAN.md`, benchmark: `docs/benchmark/README.md`)
+
+- **Rendered PDF pages** with pdf.js (legacy build): zoom, page navigation, scrolling; the browser re-hashes the file
+  and refuses to render on a SHA-256 mismatch. The exact text-layer view is one tab away.
+- **Two kinds of location, never conflated**: text-layer citations (page + character offsets, what the report cites)
+  and rendered-page regions (page + x,y,w,h %). A citation is highlighted on the rendered page only if its quote matches
+  exactly one place there; otherwise the viewer says it could not be placed.
+- **Keyboard-accessible region selection** (arrows move, Shift+arrows resize, numeric inputs) on PDF pages and images —
+  the manual transcription path for documents without a text layer
+- **Benchmark corpus**: 26 fictional documents (text, PDF tables, multi-page, two-column, text-free PDF, image,
+  radiology) with a hand-written ground-truth manifest, plus 8 held-out documents written after the parser was frozen
+- **Parser `ca125-lab` v2.1**: layout-tolerant rules (label variants, tables, flags, reference ranges, row dates,
+  collection vs report dates, unit before value, value on next line); flags multiple values, dotted thousands
+  separators, mentions without results; never duplicates proposals across parser versions
+- **Evaluation tool** `python -m app.benchmark [--holdout]`: precision, recall, field and anchor accuracy, ambiguity
+  kept visible, duplicates, findings, and every non-ideal outcome by layout; gate = zero silently incorrect results
+- **Case history view**: date picker with everything recorded that day, supporting documents, pending proposals and
+  conflicts (never resolved); CA-125 chart with treatment dates and unreviewed markers; every value links to evidence
+- **One-step document import** (duplicates refused before anything is created); case and view kept across reloads
+
+**M2.5 — reconstructing a case from documents** (walkthrough: `docs/WALKTHROUGH_M2_5.md`)
+
+**M2.5 — reconstructing a case from documents** (walkthrough: `docs/WALKTHROUGH_M2_5.md`)
+
+- **Documents view**: each attached fictional file shown beside the records that cite it — the deterministic text layer
+  (UTF-8 text; pypdf for PDFs, per page) with cited passages highlighted, or the image with cited regions outlined; the
+  original file stays byte-identical and is re-hashed whenever it is served
+- **Evidence anchors**: any observation can cite a page + exact quoted passage (resolved to character offsets and checked
+  against the document text; absent or ambiguous quotes are refused) or an image region `x,y,w,h` (%)
+- **Provenance** on every observation: `transcribed` (from a document), `extracted` (accepted from the review queue) or
+  `user_observation` (not from a document; cannot carry an anchor)
+- **Source-anchored transcription**: select text (or drag a region) in the viewer → the entry form opens prefilled with the
+  source and location
+- **Deterministic CA-125 extraction** (`ca125-lab` v1): proposes test/value/unit/date per line with the original passage and
+  location; reports `date_ambiguous`, `value_qualifier`, `value_not_found`, `unit_not_accepted`, `date_after_source` … instead
+  of guessing; re-running never duplicates proposals
+- **Review queue**: compare each proposal with its original text; accept, correct (reason required) or reject (reason
+  required); accepted values become `extracted` records in state `reviewed`, never `verified`; all decisions audited
+- **Evidence view**: conflicting values, possible duplicate reports / same events, observations dated after their source,
+  transcriptions without a location, sources without a file, pending proposals — listed, never resolved; records per
+  date and per document; consecutive same-unit differences
+- **Traceable report**: every observation line names provenance, file, SHA-256 prefix, page and character range with the
+  quoted passage; `fixtures/audit_report.py` re-checks those citations against the original files without the app
+- **Verified backup/restore**: backups carry a manifest (table hashes, audit chain, document hashes); `python -m app.restore`
+  verifies before and after, preserves any existing target, and refuses tampered backups
+- Duplicate imports (same bytes within a case) refused; schema migration 3 upgrades M2 databases in place
+
+**M2 — hardening** (still in place)
 
 - Fictional demonstration case seeded into a local SQLite database; repeatable seeding
 - **Blank-database start in the UI**: create a fictional case (always flagged synthetic; the API has no way to create a non-synthetic case)
@@ -36,7 +112,15 @@ cd OncoScope_MVP\backend
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements-dev.txt
-python -m app.seed        # optional: fictional demo case; skip to start from an empty database
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+```
+
+This starts **protected mode** (`backend/data/oncoscope.sqlite3`): the browser asks you to create the local owner on
+first launch, then to unlock. To run the unauthenticated **demonstration mode** on its own database instead:
+
+```powershell
+$env:ONCOSCOPE_MODE = "demo"
+python -m app.seed        # optional: fictional demo case (demonstration mode only)
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
@@ -59,8 +143,8 @@ cd OncoScope_MVP/backend
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
-python -m app.seed
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+uvicorn app.main:app --host 127.0.0.1 --port 8000          # protected mode
+# or: ONCOSCOPE_MODE=demo python -m app.seed && ONCOSCOPE_MODE=demo uvicorn app.main:app --host 127.0.0.1 --port 8000
 # separate terminal:
 cd OncoScope_MVP/frontend
 npm install && npm run dev
@@ -70,17 +154,20 @@ npm install && npm run dev
 
 ```powershell
 cd OncoScope_MVP\backend
-python -m pytest -q                 # 28 API, migration, audit, unit-rule and export tests
+python -m pytest -q                 # 135 passed + 2 expected failures (plaintext at rest, audit tail truncation)
+python -m app.benchmark             # extraction benchmark against the fictional ground truth (add --holdout for the held-out set)
 
 cd ..\frontend
 npm run build                       # strict TypeScript + production build
-npm test                            # Vitest component/unit tests (12)
-npm run test:e2e                    # Playwright: required M2 demonstration in a real browser
+npm test                            # Vitest component/unit tests (40, incl. WCAG contrast and the lock screen)
+npm run test:e2e                    # Playwright: M2, M2.5, M2.6 (demonstration mode) and M3.1-A (protected mode)
 ```
 
-`npm run test:e2e` starts its own API on port 8010 with a **new empty database** in the OS temp directory and a Vite server on port 5180, then drives the UI. It uses the installed Microsoft Edge (`PW_CHANNEL=chrome` to use Chrome instead; on non-Windows set `ONCOSCOPE_PYTHON` if the venv is elsewhere). No browser download is needed.
+`npm run test:e2e` starts four isolated stacks (API 8010–8013 + Vite 5180–5183 for M2, M2.5, M2.6 in demonstration mode and M3.1-A in protected mode with a 45-second session lifetime), each on a **new empty database** in the OS temp directory, then drives the UI. The M2.6 run saves screenshots to `docs/screenshots/`. The M2.5 run also calls the backup/restore CLI and the report audit script. It uses the installed Microsoft Edge (`PW_CHANNEL=chrome` to use Chrome instead; on non-Windows set `ONCOSCOPE_PYTHON` if the venv is elsewhere). No browser download is needed.
 
 ## User workflow
+
+For the document-centred M2.5 workflow follow `docs/WALKTHROUGH_M2_5.md`. The general workflow:
 
 1. On an empty database, create a **fictional case**. Otherwise select **Overview**.
 2. **Add record** → create a **Source** first (label, type, date, fictional origin). The new source is preselected for the next record; date, test, unit and study also stay filled for fast entry from one document.
@@ -94,11 +181,14 @@ npm run test:e2e                    # Playwright: required M2 demonstration in a
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/health` | Local API health and schema version |
+| GET | `/api/health` | Local API health, schema version and mode (no session needed) |
+| GET | `/api/auth/status` | Mode and whether owner setup is needed (no session needed) |
+| POST | `/api/auth/setup` / `/api/auth/unlock` | Create the local owner (once) / unlock; both return a session token |
+| POST | `/api/auth/lock` | Revoke the current session |
 | GET / POST | `/api/patients` | List / create fictional cases (always synthetic) |
 | GET | `/api/patients/{id}/dashboard` | Patient metadata and counts |
 | GET / POST | `/api/patients/{id}/sources` / `/api/sources` | Register source documents |
-| PUT / GET | `/api/sources/{id}/document` | Attach (once) / open a synthetic source file |
+| PUT / GET | `/api/sources/{id}/document` | Attach (once; filename in the `X-Document-Filename` header, URL-encoded) / open a synthetic source file |
 | GET | `/api/sources/{id}/document/verify` | Re-hash the stored file |
 | GET / POST | `/api/patients/{id}/events` / `/api/events` | Clinical event metadata |
 | GET / POST | `/api/patients/{id}/labs` / `/api/labs` | Laboratory observations |
@@ -113,7 +203,12 @@ npm run test:e2e                    # Playwright: required M2 demonstration in a
 | GET | `/api/patients/{id}/timeline` | Unified chronological record |
 | GET | `/api/patients/{id}/compare?baseline_id=1&followup_id=2` | Source-linked arithmetic differences |
 | GET | `/api/patients/{id}/audit` · `/api/audit/verify` | Audit history · hash-chain verification |
-| GET | `/api/patients/{id}/report.md` | Descriptive Markdown report |
+| GET | `/api/sources/{id}/document/text` | Deterministic text layer used for anchors and extraction |
+| POST | `/api/sources/{id}/extract` | Propose CA-125 transcriptions (idempotent) |
+| GET | `/api/patients/{id}/extractions[?status=]` | Review queue |
+| POST | `/api/extractions/{id}/accept` · `/reject` | Audited decision (`{"changes": {...}, "reason": "..."}`) |
+| GET | `/api/patients/{id}/evidence` | Findings: conflicts, duplicates, date mismatches, missing support |
+| GET | `/api/patients/{id}/report.md` | Descriptive Markdown report with evidence citations |
 | GET | `/api/patients/{id}/export.json` · `/export/{table}.csv` | Read-only synthetic export |
 
 `{type}` is one of `sources`, `events`, `labs`, `treatments`, `studies`, `measurements`. Clinical dates are ISO `YYYY-MM-DD` calendar dates (observations cannot be dated in the future; `plan` events can). System timestamps (`entered_at`, `updated_at`, audit `recorded_at`) are UTC with a `Z` suffix; rows created before migration 2 keep SQLite's `YYYY-MM-DD HH:MM:SS` UTC form. The app performs **no unit conversion**.
@@ -130,10 +225,14 @@ OncoScope_MVP/
 │   │   ├── units.py         Lab unit registry, number formatting, exact differences
 │   │   ├── documents.py     Content-addressed synthetic document store (SHA-256)
 │   │   ├── reporting.py     Markdown report, JSON/CSV export
-│   │   ├── backup.py        Non-destructive backup CLI
+│   │   ├── extraction.py    Rule-based CA-125 parser (proposals only)
+│   │   ├── evidence.py      Documentation findings (never resolved automatically)
+│   │   ├── backup.py        Backup CLI with verification manifest
+│   │   ├── restore.py       Verified, non-destructive restore CLI
 │   │   └── seed.py          Explicitly synthetic ovarian-monitoring example
 │   ├── tests/test_api.py    Phase 1 API regression tests
 │   ├── tests/test_m2.py     M2 tests incl. the required demonstration from a blank database
+│   ├── tests/test_m25_*.py  Evidence anchors, extraction, findings/report audit, backup/restore
 │   ├── requirements.txt
 │   └── requirements-dev.txt
 ├── frontend/
@@ -141,25 +240,40 @@ OncoScope_MVP/
 │   ├── src/components/      Chart, correction/history tools, forms, sources, audit
 │   ├── src/records.ts       Editable-field specs, change detection, number display
 │   ├── src/*.test.ts(x)     Vitest tests
-│   ├── e2e/                 Playwright end-to-end demonstration
+│   ├── e2e/                 Playwright M2 and M2.5 demonstrations
 │   └── src/styles.css       Responsive visual design
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── SECURITY.md
 │   ├── ROADMAP.md
-│   └── M2_PLAN.md           M2 findings and milestone plan
+│   ├── M2_PLAN.md           M2 findings and milestone plan
+│   ├── M2_5_PLAN.md         M2.5 milestones and acceptance criteria
+│   └── WALKTHROUGH_M2_5.md  Step-by-step case reconstruction demonstration
+├── fixtures/
+│   ├── fictional/           Fictional lab/CT reports (TXT, PDF) and an image; byte-stable (binary in git)
+│   ├── make_fixtures.py     Regenerates them deterministically
+│   └── audit_report.py      Independent report-citation audit against the original files
 ├── AGENTS.md                Codex working agreement
 └── .gitignore              Excludes local database, documents, scans and .env
 ```
 
 ## Known limitations — read before real data
 
-**Do not import or transcribe real patient data into this version.** This MVP has no authentication, no application-layer database or document encryption, no automatic encrypted backup, no consent workflow, no verified data ingestion from records, no patient access-control boundary, and no production threat model. SQLite content, attached documents and report text are stored unencrypted unless the operating system's disk encryption covers them. Only run on loopback (`127.0.0.1`); do not deploy or expose it on a network.
+**Do not import or transcribe real patient data into this version.** The repository is public; never commit real data.
+See `docs/M3_THREAT_MODEL.md` for prioritised risks. This MVP has no authentication, no application-layer database or document encryption, no automatic encrypted backup, no consent workflow, no verified data ingestion from records, no patient access-control boundary, and no production threat model. SQLite content, attached documents and report text are stored unencrypted unless the operating system's disk encryption covers them. Only run on loopback (`127.0.0.1`); do not deploy or expose it on a network.
 
-- Records cannot be deleted (by design for now); a mistaken record can only be corrected. There is no restore command; backups are restored by copying the backup file over a stopped database.
+- Records cannot be deleted (by design for now); a mistaken record can only be corrected or rejected before acceptance.
+- Restore is a CLI, restores the whole database (all cases), and expects the API to be stopped (not enforced).
 - The audit hash chain detects edits made outside the app, but anyone with file access can rewrite the whole chain consistently; it is tamper-evident against casual edits, not cryptographically signed.
 - Attached documents are verified by hash, not by content: nothing checks that a document actually says what the transcribed values say.
-- Inline viewing of attached PDFs has not been verified in a browser (served with `Content-Security-Policy: sandbox`, which some browsers refuse to render inline for PDFs). Text and image documents and hash verification were verified.
+- **The nontechnical-user walkthrough has not been performed** (`docs/USABILITY_M2_6.md`); that M2.6 acceptance criterion is incomplete.
+- Rendered-page highlights for text-layer citations are coarse (whole pdf.js text items) and appear only for unique matches; documents rendered differently by pdf.js and pypdf may show "could not be placed".
+- Extraction covers CA-125 only, from documents with a text layer. On the 8 held-out layouts recall was 28.6%: unfamiliar layouts are usually flagged for manual review rather than read. There is no OCR (`docs/OCR_INVESTIGATION.md`): images and scanned PDFs need manual, region-anchored transcription.
+- The benchmark corpus and parser share an author; main-corpus scores do not demonstrate generalisation.
+- Character offsets refer to the text layer of a specific extractor version (e.g. `pypdf-6.21.2-v1`). Anchors are checked when written; after a pypdf upgrade the text may differ and existing anchors are not re-validated automatically.
+- Region anchors are checked for format and bounds only, never against image content. Drawing a region needs a mouse (no keyboard alternative yet).
+- Findings use exact matching (same test and date, same study date and modality, …); they do not detect the same event recorded on different dates or with different wording.
+- Reviewer identity is not recorded: there is no login, so "accepted" / "reviewed" / "verified" say what happened, not who did it.
 - The unit registry covers CA-125 only; other tests accept any well-formed unit string.
 - Lesion keys are matched exactly (case-sensitive); a mistyped key shows as unmatched rather than being merged.
 - Real multi-user isolation has not been built. DICOM rendering and registration are Phase 2 work.

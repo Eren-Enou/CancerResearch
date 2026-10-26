@@ -1,0 +1,6 @@
+FICTIONAL DOCUMENT - SYNTHETIC TEST DATA - NOT A REAL PATIENT
+FICTIONAL REGIONAL LAB
+Patient: Fictional Case M26
+Date collected: 2026-09-03
+
+Tumour marker CA 125 ........ 61.4 U/ml

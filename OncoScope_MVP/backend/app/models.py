@@ -35,6 +35,7 @@ LesionKey = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[A-Za-
 SourceKind = Literal["lab", "radiology", "oncology-note", "treatment", "manual", "other"]
 EventKind = Literal["diagnosis", "symptom", "procedure", "consultation", "plan", "other"]
 Modality = Literal["CT", "MRI", "PET", "US", "other"]
+Provenance = Literal["transcribed", "extracted", "user_observation"]
 Strict = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
@@ -45,9 +46,27 @@ class PatientCreate(BaseModel):
 
 
 class Entry(BaseModel):
+    """An observation: always linked to a source, optionally anchored to a place in its document."""
     model_config = Strict
     patient_id: int = Field(gt=0)
     source_id: int = Field(gt=0)
+    provenance: Provenance = "transcribed"
+    anchor_page: int | None = Field(default=None, ge=1, le=10000)
+    anchor_quote: str | None = Field(default=None, min_length=1, max_length=2000)
+    anchor_start: int | None = Field(default=None, ge=0)
+    anchor_end: int | None = Field(default=None, gt=0)
+    anchor_region: str | None = Field(default=None, max_length=60)
+
+    @model_validator(mode="after")
+    def evidence_rules(self):
+        anchored = any(v is not None for v in (self.anchor_page, self.anchor_quote, self.anchor_start, self.anchor_end, self.anchor_region))
+        if self.provenance == "user_observation" and anchored:
+            raise ValueError("A user observation is not a transcription and cannot carry a document anchor")
+        if (self.anchor_start is None) != (self.anchor_end is None):
+            raise ValueError("anchor_start and anchor_end must be given together")
+        if self.anchor_start is not None and (self.anchor_quote is None or self.anchor_end <= self.anchor_start):
+            raise ValueError("Offsets need the quoted passage and anchor_end > anchor_start")
+        return self
 
 
 class SourceCreate(BaseModel):
@@ -125,7 +144,9 @@ EDITABLE_FIELDS: dict[str, tuple[str, ...]] = {
     table: tuple(name for name in model.model_fields if name != "patient_id")
     for table, model in CREATE_MODELS.items()
 }
-NULLABLE_FIELDS = {("sources", "source_date"), ("measurements", "short_axis_mm")}
+ANCHOR_FIELDS = ("anchor_page", "anchor_quote", "anchor_start", "anchor_end", "anchor_region")
+NULLABLE_FIELDS = {("sources", "source_date"), ("measurements", "short_axis_mm")} | {
+    (table, field) for table in CREATE_MODELS if table != "sources" for field in ANCHOR_FIELDS}
 
 
 class Correction(BaseModel):
@@ -148,3 +169,33 @@ class LabCorrection(BaseModel):
     value: float = Field(allow_inf_nan=False)
     unit: Line = Field(min_length=1, max_length=50)
     reason: Line = Field(min_length=3, max_length=500)
+
+
+class ExtractionAccept(BaseModel):
+    """Optional field corrections at acceptance; a reason is required by the server when anything differs or issues exist."""
+    model_config = Strict
+    changes: dict[Literal["date", "test", "value", "unit"], str | float | None] = Field(default_factory=dict)
+    reason: Line | None = Field(default=None, min_length=3, max_length=500)
+
+
+class ExtractionReject(BaseModel):
+    model_config = Strict
+    reason: Line = Field(min_length=3, max_length=500)
+
+
+class OwnerSetup(BaseModel):
+    # Passphrases are taken exactly as typed (no whitespace stripping); auth.py checks their length.
+    model_config = ConfigDict(extra="forbid")
+    display_name: Annotated[Line, AfterValidator(str.strip)] = Field(min_length=1, max_length=80)
+    passphrase: str = Field(max_length=1024)
+
+    @model_validator(mode="after")
+    def name_not_blank(self):
+        if not self.display_name:
+            raise ValueError("Enter a name for the local owner")
+        return self
+
+
+class Unlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    passphrase: str = Field(min_length=1, max_length=1024)

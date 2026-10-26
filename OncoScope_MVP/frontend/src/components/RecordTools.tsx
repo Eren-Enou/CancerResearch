@@ -5,15 +5,24 @@ import type { AnyRecord, AuditEntry, Entity, Source, Study, VerificationStatus }
 
 type Props = { entity: Entity; record: AnyRecord; sources: Source[]; studies: Study[]; onSaved: () => void };
 
+/** Plain-language names for the review states (stored values stay entered / reviewed / verified). */
+export const statusLabel: Record<VerificationStatus, string> = { entered: 'not yet checked', reviewed: 'checked', verified: 'verified' };
+
 export function StatusBadge({ record }: { record: { revision: number; verification_status: VerificationStatus } }) {
   return <span className="badges">
-    <span className={`badge status-${record.verification_status}`}>{record.verification_status}</span>
+    <span className={`badge status-${record.verification_status}`} title="Checking confirms the value matches its document, not a medical conclusion">{statusLabel[record.verification_status]}</span>
     {record.revision > 1 && <span className="badge corrected" title="Corrected; originals are in the audit history">rev {record.revision}</span>}
   </span>;
 }
 
 function show(value: unknown) {
   return value === null || value === undefined || value === '' ? '∅' : String(value);
+}
+
+/** Who made an audit entry. Entries written before sign-in existed (schema v4) stay "unknown"; none is guessed. */
+export function actorText(entry: AuditEntry): string {
+  if (!entry.actor_id) return 'by unknown (recorded before sign-in existed)';
+  return entry.actor_id === 'demo' ? 'by demonstration mode (no sign-in)' : `by ${entry.actor_label ?? entry.actor_id}`;
 }
 
 /** Renders one audit entry as field-level before → after lines. */
@@ -75,15 +84,15 @@ export function RecordTools({ entity, record, sources, studies, onSaved }: Props
         else input = <input type={f.type ?? 'text'} step={f.type === 'number' ? 'any' : undefined} required={!f.optional} value={value} onChange={e => set(e.target.value)} />;
         return <label key={f.name}>{f.label}{input}</label>;
       })}
-      <label>Verification state<select value={status} onChange={e => setStatus(e.target.value as VerificationStatus)}>{['entered', 'reviewed', 'verified'].map(s => <option key={s}>{s}</option>)}</select></label>
+      <label>Checked against the document?<select value={status} onChange={e => setStatus(e.target.value as VerificationStatus)}>{(['entered', 'reviewed', 'verified'] as VerificationStatus[]).map(s => <option key={s} value={s}>{statusLabel[s]}</option>)}</select></label>
       <label>Reason for change (required)<input required minLength={3} value={reason} onChange={e => setReason(e.target.value)} /></label>
-      <p className="caption">Saved as revision {record.revision + 1}. The original values stay in the audit history; a corrected value returns to “entered”.</p>
+      <p className="caption">Saved as version {record.revision + 1}. The earlier values stay in the change history; a corrected value goes back to “not yet checked”.</p>
       {error && <p className="error" role="alert">{error}</p>}
       <button className="primary">Save correction</button>
     </form>}
     {mode === 'history' && <div className="history" aria-label={`History of ${label}`}>
       {error && <p className="error" role="alert">{error}</p>}
-      {history.map(h => <div key={h.id} className="history-entry"><span className="date-label">{h.recorded_at} · {h.action}</span><AuditDetail entry={h} /></div>)}
+      {history.map(h => <div key={h.id} className="history-entry"><span className="date-label">{h.recorded_at} · {h.action} · {actorText(h)}</span><AuditDetail entry={h} /></div>)}
     </div>}
   </div>;
 }

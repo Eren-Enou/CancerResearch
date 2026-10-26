@@ -1,7 +1,7 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { post } from '../api';
 import { eventTypes, knownLabUnits, modalities, sourceTypes } from '../records';
-import type { Source, Study } from '../types';
+import type { AnchorDraft, Source, Study } from '../types';
 
 const today = () => new Date().toLocaleDateString('en-CA'); // local calendar date, YYYY-MM-DD
 const defaultForm = () => ({ date: today(), source_id: '', kind: 'other', title: '', detail: '', test: 'CA-125', value: '', unit: 'U/mL', regimen: '', cycle: '1', notes: '', modality: 'CT', study_label: '', report_text: '', study_id: '', lesion_key: '', site: '', long_axis_mm: '', short_axis_mm: '', label: '', source_kind: 'manual', source_date: '', origin: '', note: '' });
@@ -10,10 +10,26 @@ type FormKind = 'Source' | 'Event' | 'Lab' | 'Treatment' | 'Imaging study' | 'Le
 const kinds: FormKind[] = ['Source', 'Event', 'Lab', 'Treatment', 'Imaging study', 'Lesion measurement'];
 // After a save these fields stay filled so several observations from one source can be entered quickly.
 const sticky: (keyof FormState)[] = ['source_id', 'date', 'test', 'unit', 'regimen', 'modality', 'study_id', 'site'];
+const noAnchor = { page: '', quote: '', start: '', end: '', region: '' };
+type AnchorFields = typeof noAnchor;
+const asNumber = (v: string) => v === '' ? null : Number(v);
+const asText = (v: string) => v.trim() === '' ? null : v;
 
-export function AddRecord({ patientId, sources, studies, onSaved }: { patientId: number; sources: Source[]; studies: Study[]; onSaved: () => void }) {
+export function AddRecord({ patientId, sources, studies, onSaved, anchor = null }: { patientId: number; sources: Source[]; studies: Study[]; onSaved: () => void; anchor?: AnchorDraft | null }) {
   const [kind, setKind] = useState<FormKind>('Source');
   const [form, setForm] = useState<FormState>(defaultForm);
+  const [provenance, setProvenance] = useState<'transcribed' | 'user_observation'>('transcribed');
+  const [where, setWhere] = useState<AnchorFields>(noAnchor);
+  const located = where.start !== '';
+
+  // A selection in the document viewer arrives here as a prefilled, source-anchored transcription.
+  useEffect(() => {
+    if (!anchor) return;
+    setKind(anchor.kind as FormKind); setProvenance('transcribed'); setError(''); setMessage('');
+    setForm(p => ({ ...p, source_id: String(anchor.source_id) }));
+    setWhere({ page: anchor.anchor_page === null ? '' : String(anchor.anchor_page), quote: anchor.anchor_quote ?? '',
+      start: anchor.anchor_start === null ? '' : String(anchor.anchor_start), end: anchor.anchor_end === null ? '' : String(anchor.anchor_end), region: anchor.anchor_region ?? '' });
+  }, [anchor]);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const edit = (name: keyof FormState, value: string) => setForm(p => ({ ...p, [name]: value }));
@@ -31,7 +47,9 @@ export function AddRecord({ patientId, sources, studies, onSaved }: { patientId:
   async function submit(e: FormEvent) {
     e.preventDefault(); setError(''); setMessage('');
     try {
-      const common = { patient_id: patientId, source_id: Number(form.source_id) };
+      const evidence = provenance === 'user_observation' ? { provenance } : { provenance, anchor_page: asNumber(where.page), anchor_quote: asText(where.quote),
+        anchor_start: asNumber(where.start), anchor_end: asNumber(where.end), anchor_region: asText(where.region) };
+      const common = { patient_id: patientId, source_id: Number(form.source_id), ...evidence };
       const payloads: Record<FormKind, [string, Record<string, unknown>]> = {
         'Source': ['/sources', { patient_id: patientId, label: form.label, kind: form.source_kind, source_date: form.source_date || null, origin: form.origin, note: form.note }],
         'Event': ['/events', { ...common, date: form.date, kind: form.kind, title: form.title, detail: form.detail }],
@@ -49,6 +67,7 @@ export function AddRecord({ patientId, sources, studies, onSaved }: { patientId:
         if (kind === 'Source') next.source_id = String(saved.id);
         return next;
       });
+      setWhere(noAnchor); // an anchor cites one passage; it is never reused for the next record
       onSaved();
     } catch (err) { setError((err as Error).message); }
   }
@@ -66,6 +85,20 @@ export function AddRecord({ patientId, sources, studies, onSaved }: { patientId:
         <p className="caption">A synthetic PDF, text or image file can be attached afterwards in Sources; its SHA-256 is recorded.</p>
       </> : <>
         {sourcePicker}
+        <fieldset className="evidence-fields"><legend>Where the value comes from</legend>
+          <label>Where this value comes from<select name="provenance" value={provenance} onChange={e => { setProvenance(e.target.value as typeof provenance); if (e.target.value === 'user_observation') setWhere(noAnchor); }}>
+            <option value="transcribed">Copied from the source document</option><option value="user_observation">My own note (not in a document)</option></select></label>
+          {provenance === 'transcribed' && (located || where.region ? <div className="anchor-preview" data-testid="anchor-preview">
+              <div className="tiny muted">{located ? `Cites page ${where.page}, characters ${where.start}–${where.end}` : `Cites region ${where.region} (x,y,w,h %)`} of source #{form.source_id}</div>
+              {where.quote && <blockquote>{where.quote}</blockquote>}
+              <button type="button" className="text-button" onClick={() => setWhere(noAnchor)}>Remove document location</button></div>
+            : <>
+              <label>Document page (optional)<input name="anchor_page" type="number" min={1} value={where.page} onChange={e => setWhere(w => ({ ...w, page: e.target.value }))} /></label>
+              <label>Quoted passage (optional, exact text)<input name="anchor_quote" value={where.quote} onChange={e => setWhere(w => ({ ...w, quote: e.target.value }))} /></label>
+              <p className="caption">Tip: select the passage in Documents to cite it exactly. A typed quote must occur once in the document.</p>
+            </>)}
+          {provenance === 'user_observation' && <p className="caption">Recorded as your own observation, separate from transcribed document content.</p>}
+        </fieldset>
         {kind === 'Lesion measurement' && <label>Associated study<select name="study_id" value={form.study_id} required onChange={e => chooseStudy(e.target.value)}><option value="">Select study</option>{studies.map(s => <option value={s.id} key={s.id}>#{s.id} · {s.date} · {s.study_label}</option>)}</select></label>}
         {kind !== 'Lesion measurement' && field('date', 'Date', 'date')}
         {kind === 'Event' && <>

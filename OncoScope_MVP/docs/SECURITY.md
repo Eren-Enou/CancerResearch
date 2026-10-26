@@ -6,8 +6,22 @@ No real names, dates of birth, patient IDs, pathology records, medical images, s
 
 The app does **not** provide user login, per-user authorization, encryption-at-rest, encrypted backup, cloud synchronization, file ingestion safety checks, or a patient permission workflow. It should not be deployed to Vercel, hosted on a home LAN, or shared publicly. Even on localhost, other software running under the same operating-system account might access its local database.
 
+## M3.1-A protected local access
+Protected mode (default) requires an owner-passphrase session for every case-data API request; new audit entries name
+the owner; foreign origins and non-loopback peers are refused; the UI locks and discards case data on lock, inactivity,
+session end and 401. Design, verification and **remaining risks**: `M3_1A_PROTECTED_ACCESS.md`. **No encryption at rest
+yet** — the lock does not protect the files on disk.
+
+## M3.0 documents
+`M3_DATA_INVENTORY.md` (where data lives), `M3_THREAT_MODEL.md` (prioritised risks, confirmed defects, limitations),
+`M3_SECURITY_ARCHITECTURE.md` (proposed controls), `M3_1_IMPLEMENTATION_PLAN.md` (first increment), and the regression
+suite `backend/tests/test_security.py`. The repository is **public**: fixtures, screenshots and CI logs must stay fictional.
+
 ## Existing controls
 
+- Protected mode: Argon2id passphrase verifier (`argon2-cffi`), 256-bit in-memory session tokens in the `Authorization`
+  header only, idle/lifetime expiry, immediate revocation on lock, rate-limited unlock, actor on every new audit entry.
+- Requests from non-loopback peers, foreign `Origin`s or `Sec-Fetch-Site: cross-site/same-site` are refused (403).
 - FastAPI and Vite examples bind to `127.0.0.1`, not `0.0.0.0`.
 - No third-party AI API, analytics tracker, telemetry integration, or external database.
 - Local synthetic document attachment only: PDF/TXT/PNG/JPEG, ≤ 10 MB, signature-checked, no HTML/SVG/DICOM; served with `nosniff` and `Content-Security-Policy: sandbox`; uploads require `application/octet-stream`, which other web origins cannot send without a CORS preflight the API never grants.
@@ -15,6 +29,16 @@ The app does **not** provide user login, per-user authorization, encryption-at-r
 - Audit log is append-only at the SQLite level and hash-chained; `GET /api/audit/verify` detects out-of-band edits.
 - Validation errors report field and message only; submitted values are not echoed back.
 - Export (JSON/CSV) is refused for any case not flagged synthetic; CSV text cells are guarded against formula injection.
+- Extraction is local, deterministic and rule-based (no model, no network). PDF parsing uses pypdf in-process; a malformed
+  PDF is reported as unreadable. Parsing untrusted PDFs is attack surface that must be isolated before real documents.
+- The browser renders PDFs with pdf.js after re-checking the file's SHA-256; XFA is disabled and annotations/scripts are
+  not rendered. pdf.js parsing untrusted PDFs in the browser is additional attack surface to review before real documents.
+  The legacy build is used for compatibility (polyfills), and should be kept updated.
+- No caching: every `/api` response is `no-store`; no record content in URLs or access logs (regression test runs the real
+  server and searches its log for sentinel values).
+- CI hygiene job blocks committed databases, document stores, backups, documents outside fictional fixtures and secrets.
+- Backups include a verification manifest; restores verify before and after and never overwrite an existing database or
+  differing document bytes without keeping them. Backups and the derived `document_text` cache are **unencrypted**.
 - Input constraints and patient/source ownership checks.
 - Git excludes SQLite databases, DICOM files, `.env` files, local data directories (including attached documents and backups), and Playwright output.
 - Manual/synthetic records preserve source linkage; initial audit history retained for writes.

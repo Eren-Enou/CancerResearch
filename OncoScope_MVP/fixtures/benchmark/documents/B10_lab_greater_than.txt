@@ -1,0 +1,6 @@
+FICTIONAL DOCUMENT - SYNTHETIC TEST DATA - NOT A REAL PATIENT
+IMAGINARY VALLEY CLINIC LABORATORY
+Patient: Fictional Case M26
+Collection date: 2026-08-01
+
+CA-125 result: >1000 U/mL (above reportable range)

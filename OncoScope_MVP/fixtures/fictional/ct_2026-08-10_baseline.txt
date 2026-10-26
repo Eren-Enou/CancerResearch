@@ -1,0 +1,7 @@
+FICTIONAL DOCUMENT - SYNTHETIC TEST DATA - NOT A REAL PATIENT
+IMAGINARY VALLEY CLINIC RADIOLOGY
+Study: Baseline abdominal CT (fictional)
+Study date: 2026-08-10
+
+Findings: Target lesion reference-A, fictional soft-tissue lesion, measures 38 x 22 mm.
+Impression: Fictional educational report. Not diagnostic.

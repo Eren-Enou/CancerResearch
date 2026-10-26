@@ -1,0 +1,879 @@
+{
+  "format": "oncoscope-benchmark-manifest",
+  "version": 1,
+  "case": "Fictional Case M26",
+  "notice": "Entirely fictional documents and ground truth for software testing. Not real patient data.",
+  "documents": [
+    {
+      "id": "B01",
+      "file": "B01_lab_keyvalue.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text key-value",
+      "patterns": [
+        "iso-date",
+        "collection-vs-report-date"
+      ],
+      "text_layer": true,
+      "source_date": "2026-08-08",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 310,
+          "unit": "U/mL",
+          "date": "2026-08-07",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "CA-125: 310 U/mL",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "dec41216e7e5a5d2077879d05bc9b2f3171a984bcdb2395addcbeda99409f317"
+    },
+    {
+      "id": "B02",
+      "file": "B02_lab_pipe_table.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "markdown pipe table",
+      "patterns": [
+        "table",
+        "time-suffix",
+        "reference-range",
+        "other-analytes"
+      ],
+      "text_layer": true,
+      "source_date": "2026-08-29",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 288,
+          "unit": "U/mL",
+          "date": "2026-08-28",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "| CA-125 | 288    | U/mL",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "a9952ff0698438bfdf817db8713de6364c28d32abb75da4dcabbde61254a94ad"
+    },
+    {
+      "id": "B03",
+      "file": "B03_lab_flag_column.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "fixed-width table with flag column",
+      "patterns": [
+        "label-variant",
+        "named-month-date",
+        "flag-column",
+        "reference-range"
+      ],
+      "text_layer": true,
+      "source_date": "2026-09-19",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 202,
+          "unit": "U/mL",
+          "date": "2026-09-18",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "Cancer antigen 125   202     H     U/mL",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "f7ac9c13d1405e59f66863383bff7b1748f313f6304aa1bca76e91d1433aef1e"
+    },
+    {
+      "id": "B04",
+      "file": "B04_lab_cumulative.pdf",
+      "media_type": "application/pdf",
+      "category": "lab",
+      "layout": "PDF cumulative table (cells drawn separately)",
+      "patterns": [
+        "pdf",
+        "table",
+        "row-dates",
+        "repeated-measurements"
+      ],
+      "text_layer": true,
+      "source_date": "2026-10-10",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 310,
+          "unit": "U/mL",
+          "date": "2026-08-07",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "310",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        },
+        {
+          "test": "CA-125",
+          "value": 288,
+          "unit": "U/mL",
+          "date": "2026-08-28",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "288",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        },
+        {
+          "test": "CA-125",
+          "value": 202,
+          "unit": "U/mL",
+          "date": "2026-09-18",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "202",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        },
+        {
+          "test": "CA-125",
+          "value": 174,
+          "unit": "U/mL",
+          "date": "2026-10-09",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "174",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "daee205ae93af34aae701da9c318b08a7bdd0b06b691c53f2118ff23d321568b"
+    },
+    {
+      "id": "B05",
+      "file": "B05_lab_multipage.pdf",
+      "media_type": "application/pdf",
+      "category": "lab",
+      "layout": "PDF multi-page (date on page 1, result on page 2)",
+      "patterns": [
+        "pdf",
+        "multi-page",
+        "document-level-date"
+      ],
+      "text_layer": true,
+      "source_date": "2026-10-10",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 174,
+          "unit": "U/mL",
+          "date": "2026-10-09",
+          "qualifier": null,
+          "page": 2,
+          "evidence": "174",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "21dd820be8b9f976b88abfd4f6a6100a2e06456f70aa16e223ef09a6c463e34c"
+    },
+    {
+      "id": "B06",
+      "file": "B06_lab_two_column.pdf",
+      "media_type": "application/pdf",
+      "category": "lab",
+      "layout": "PDF two-column layout",
+      "patterns": [
+        "pdf",
+        "two-column"
+      ],
+      "text_layer": true,
+      "source_date": "2026-10-15",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 155,
+          "unit": "U/mL",
+          "date": "2026-10-14",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "155",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "e81ce49b3b9cb8fec071566964b203a0031c207f9f1c7d8fa1aa1afe0330edb2"
+    },
+    {
+      "id": "B07",
+      "file": "B07_lab_ambiguous_date.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text, numeric date",
+      "patterns": [
+        "ambiguous-date"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 410,
+          "unit": "U/mL",
+          "date": null,
+          "qualifier": null,
+          "page": 1,
+          "evidence": "CA-125   410   U/mL",
+          "status": "flagged",
+          "expected_issues": [
+            "date_ambiguous"
+          ],
+          "note": "03/04/2026 can be 3 April or 4 March; the document does not say"
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "acac3bb29a7e5c67b0d3c16d117c74762995c0cae96e7b060d232d9d06a41067"
+    },
+    {
+      "id": "B08",
+      "file": "B08_lab_missing_unit.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text, dotted leader, no unit",
+      "patterns": [
+        "missing-unit"
+      ],
+      "text_layer": true,
+      "source_date": "2026-09-02",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 95,
+          "unit": null,
+          "date": "2026-09-01",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "CA-125 .......... 95",
+          "status": "flagged",
+          "expected_issues": [
+            "unit_missing"
+          ],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "53b0d48e8f3c16b86f97dbb23f94ee22f7a8cc8bce0cc2cd2dfff88228427027"
+    },
+    {
+      "id": "B09",
+      "file": "B09_lab_less_than.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text, label without colon",
+      "patterns": [
+        "qualified-value",
+        "label-without-colon"
+      ],
+      "text_layer": true,
+      "source_date": "2026-10-21",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": null,
+          "unit": "U/mL",
+          "date": "2026-10-20",
+          "qualifier": "<5",
+          "page": 1,
+          "evidence": "CA-125   <5   U/mL",
+          "status": "flagged",
+          "expected_issues": [
+            "value_qualifier"
+          ],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "7cfbd06e990e8e2c01d804887004a4ab7d876e6c661a6b4a3bc8ad2a92a5f17d"
+    },
+    {
+      "id": "B10",
+      "file": "B10_lab_greater_than.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text, result label",
+      "patterns": [
+        "qualified-value"
+      ],
+      "text_layer": true,
+      "source_date": "2026-08-02",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": null,
+          "unit": "U/mL",
+          "date": "2026-08-01",
+          "qualifier": ">1000",
+          "page": 1,
+          "evidence": "CA-125 result: >1000 U/mL",
+          "status": "flagged",
+          "expected_issues": [
+            "value_qualifier"
+          ],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "17f1ef4d30b87fa4471c0941505daf3bb0fd5fd3256024974bd94fc675f4d14d"
+    },
+    {
+      "id": "B11",
+      "file": "B11_lab_unit_in_header.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text, unit in parentheses before value",
+      "patterns": [
+        "unit-before-value",
+        "alternate-unit"
+      ],
+      "text_layer": true,
+      "source_date": "2026-08-15",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 300,
+          "unit": "kU/L",
+          "date": "2026-08-14",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "CA-125 (kU/L)   300",
+          "status": "complete",
+          "expected_issues": [],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "900b13aa228ca61f0cfc09ad4b90bb15558a8d9f4d43c45c950acec78bf01ab2"
+    },
+    {
+      "id": "B12",
+      "file": "B12_lab_unsupported_unit.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text, equals sign, unaccepted unit",
+      "patterns": [
+        "unsupported-unit",
+        "label-variant"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 45,
+          "unit": null,
+          "date": "2026-09-10",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "CA125 = 45 IU/mL",
+          "status": "flagged",
+          "expected_issues": [
+            "unit_not_accepted"
+          ],
+          "note": "IU/mL is not an accepted CA-125 spelling; it is reported, never converted"
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "1a6774aaf049c3aa32e1ae4fc593a467e0275fe04cdc5e37172fe603f652c07d"
+    },
+    {
+      "id": "B13",
+      "file": "B13_lab_value_next_line.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text, label and value on separate lines",
+      "patterns": [
+        "value-next-line"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 512,
+          "unit": "U/mL",
+          "date": "2026-07-30",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "Result: 512 U/mL",
+          "status": "flagged",
+          "expected_issues": [
+            "value_on_next_line"
+          ],
+          "note": "value is on the line after the test name; read but flagged for confirmation"
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "4bc69eaf99b892fe19ab8b892be2d1945e0dc22de3a2b8538c354e488d4a6c6b"
+    },
+    {
+      "id": "B14",
+      "file": "B14_lab_amended.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text, amended result with prior value",
+      "patterns": [
+        "multiple-values",
+        "amended-report"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 202,
+          "unit": "U/mL",
+          "date": "2026-09-18",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "CA-125: 202 U/mL (previously reported as 220 U/mL)",
+          "status": "flagged",
+          "expected_issues": [
+            "multiple_values"
+          ],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "ed9fcefcb6c6885ed4f7ee3628c2d145c0728f2736029a184ab05265d9f8403b"
+    },
+    {
+      "id": "B15",
+      "file": "B15_lab_decimal_comma.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text, decimal comma",
+      "patterns": [
+        "decimal-comma"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": null,
+          "unit": "kU/L",
+          "date": "2026-10-01",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "CA-125   18,5   kU/L",
+          "status": "flagged",
+          "expected_issues": [
+            "value_separator"
+          ],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "4f17e6edc183aa52ab5cb356caed4bc37912fce4e3350b1df2bd565f2b04df5e"
+    },
+    {
+      "id": "B16",
+      "file": "B16_portal_conflicting.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text portal summary",
+      "patterns": [
+        "conflicting-value"
+      ],
+      "text_layer": true,
+      "source_date": "2026-09-20",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 220,
+          "unit": "U/mL",
+          "date": "2026-09-18",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "CA-125: 220 U/mL",
+          "status": "complete",
+          "expected_issues": [],
+          "note": "conflicts with B03/B04 (202 U/mL) for the same draw"
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "0606892044e8a14acce9cf87dfc25f14de6866fd5e2eb7d2ca383d448d0ba79e"
+    },
+    {
+      "id": "B17",
+      "file": "B17_clinic_letter.txt",
+      "media_type": "text/plain",
+      "category": "letter",
+      "layout": "narrative letter",
+      "patterns": [
+        "narrative-mention"
+      ],
+      "text_layer": true,
+      "source_date": "2026-10-16",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": null,
+          "unit": null,
+          "date": null,
+          "qualifier": null,
+          "page": 1,
+          "evidence": "The CA-125 values were discussed",
+          "status": "mention",
+          "expected_issues": [
+            "no_result_on_line"
+          ],
+          "note": ""
+        },
+        {
+          "test": "CA-125",
+          "value": null,
+          "unit": null,
+          "date": null,
+          "qualifier": null,
+          "page": 1,
+          "evidence": "Plan: repeat CA-125 in three weeks.",
+          "status": "mention",
+          "expected_issues": [
+            "no_result_on_line"
+          ],
+          "note": ""
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "397c531961d77343e28f3d826a31e3d9d1f6f23cc05d33a6ff77bde883c0d113"
+    },
+    {
+      "id": "B18",
+      "file": "B18_lab_report_date_only.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text, report date but no collection date",
+      "patterns": [
+        "missing-collection-date"
+      ],
+      "text_layer": true,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 133,
+          "unit": "U/mL",
+          "date": null,
+          "qualifier": null,
+          "page": 1,
+          "evidence": "CA-125   133   U/mL",
+          "status": "flagged",
+          "expected_issues": [
+            "date_missing"
+          ],
+          "note": "only a report date is printed; it is not used as the collection date"
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "b610ce53d7b479b44eddbabbec77ed5b2ed864d77b37b59e9070de76f32be8c6"
+    },
+    {
+      "id": "B19",
+      "file": "B19_lab_dotted_date.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text, day.month.year date",
+      "patterns": [
+        "dotted-date"
+      ],
+      "text_layer": true,
+      "source_date": "2026-09-26",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 190,
+          "unit": "U/mL",
+          "date": "2026-09-25",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "CA-125   190   U/mL",
+          "status": "complete",
+          "expected_issues": [],
+          "note": "25.09.2026 has one valid reading"
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "acb938f7d2a407ea118fe3d0ea5c5f24bb82e71ada5b0a69f1033737d5101142"
+    },
+    {
+      "id": "B20",
+      "file": "B20_lab_scanned_no_text.pdf",
+      "media_type": "application/pdf",
+      "category": "lab",
+      "layout": "PDF without text layer (scan stand-in)",
+      "patterns": [
+        "no-text-layer"
+      ],
+      "text_layer": false,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 260,
+          "unit": "U/mL",
+          "date": "2026-08-21",
+          "qualifier": null,
+          "page": 1,
+          "evidence": null,
+          "status": "no_text",
+          "expected_issues": [],
+          "note": "the dark band at roughly 10,22,78,3 % stands for the result line; manual region transcription required"
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "e55b2d4b4529cb44b8ceda52612e5879e55e86d73424cee8ce5b40dac5c06629"
+    },
+    {
+      "id": "B21",
+      "file": "B21_note_scan.png",
+      "media_type": "image/png",
+      "category": "note",
+      "layout": "image (scan stand-in)",
+      "patterns": [
+        "image",
+        "no-text-layer"
+      ],
+      "text_layer": false,
+      "source_date": null,
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 240,
+          "unit": "U/mL",
+          "date": "2026-09-25",
+          "qualifier": null,
+          "page": 1,
+          "evidence": null,
+          "status": "no_text",
+          "expected_issues": [],
+          "note": "the band at 10,30,80,12 % stands for a handwritten result"
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "cbb13a95f9a853a6ce909edd1336852c5a38ebd7e970f95467ffd382b3711201"
+    },
+    {
+      "id": "B22",
+      "file": "B22_portal_duplicate.txt",
+      "media_type": "text/plain",
+      "category": "lab",
+      "layout": "text portal summary",
+      "patterns": [
+        "duplicate-report"
+      ],
+      "text_layer": true,
+      "source_date": "2026-08-09",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": 310,
+          "unit": "U/mL",
+          "date": "2026-08-07",
+          "qualifier": null,
+          "page": 1,
+          "evidence": "CA-125: 310 U/mL",
+          "status": "complete",
+          "expected_issues": [],
+          "note": "same draw as B01 and the B04 row"
+        }
+      ],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "5e132755fb949bf4c90053f19e263b4dff385bdfc3acaa07bafa9386298411dc"
+    },
+    {
+      "id": "R01",
+      "file": "R01_ct_baseline.txt",
+      "media_type": "text/plain",
+      "category": "radiology",
+      "layout": "text radiology report",
+      "patterns": [
+        "radiology",
+        "narrative-mention"
+      ],
+      "text_layer": true,
+      "source_date": "2026-08-10",
+      "expected_observations": [
+        {
+          "test": "CA-125",
+          "value": null,
+          "unit": null,
+          "date": null,
+          "qualifier": null,
+          "page": 1,
+          "evidence": "Clinical history: elevated CA-125.",
+          "status": "mention",
+          "expected_issues": [
+            "no_result_on_line"
+          ],
+          "note": ""
+        }
+      ],
+      "expected_manual": [
+        {
+          "lesion_key": "reference-A",
+          "long_axis_mm": 38,
+          "short_axis_mm": 22,
+          "page": 1,
+          "evidence": "measures 38 x 22 mm"
+        }
+      ],
+      "notes": "",
+      "sha256": "203d86b252909cc5a9bcc011596e9e82f3dd8ca69d87d22d1f97be82f68b171d"
+    },
+    {
+      "id": "R02",
+      "file": "R02_ct_followup.pdf",
+      "media_type": "application/pdf",
+      "category": "radiology",
+      "layout": "PDF radiology report, 2 pages",
+      "patterns": [
+        "radiology",
+        "pdf",
+        "multi-page"
+      ],
+      "text_layer": true,
+      "source_date": "2026-10-12",
+      "expected_observations": [],
+      "expected_manual": [
+        {
+          "lesion_key": "reference-A",
+          "long_axis_mm": 31,
+          "short_axis_mm": 18,
+          "page": 2,
+          "evidence": "reference-A measures 31 x 18 mm"
+        },
+        {
+          "lesion_key": "reference-B",
+          "long_axis_mm": 9,
+          "short_axis_mm": null,
+          "page": 2,
+          "evidence": "reference-B measures 9 mm"
+        }
+      ],
+      "notes": "",
+      "sha256": "0a663cb3448c51b32f3216bc930815d6a01795de3fa8a39ad7ac19b38d7ee4ce"
+    },
+    {
+      "id": "R03",
+      "file": "R03_mri_narrative.txt",
+      "media_type": "text/plain",
+      "category": "radiology",
+      "layout": "text radiology narrative",
+      "patterns": [
+        "radiology",
+        "no-measurements"
+      ],
+      "text_layer": true,
+      "source_date": "2026-09-02",
+      "expected_observations": [],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "30ec90a245345caf7ee17152f89de86e8c43b232b7cc5a2991d50214babeb2e0"
+    },
+    {
+      "id": "R04",
+      "file": "R04_us_report.pdf",
+      "media_type": "application/pdf",
+      "category": "radiology",
+      "layout": "PDF ultrasound report",
+      "patterns": [
+        "radiology",
+        "pdf",
+        "no-measurements"
+      ],
+      "text_layer": true,
+      "source_date": "2026-09-30",
+      "expected_observations": [],
+      "expected_manual": [],
+      "notes": "",
+      "sha256": "e7a6c7479d8d5b3d7b8666fb3dfe0c55c6e22654b15973675a962d8bcc6555ae"
+    }
+  ],
+  "expected_findings": [
+    {
+      "kind": "conflicting_values",
+      "date": "2026-09-18",
+      "documents": [
+        "B03",
+        "B04",
+        "B16"
+      ],
+      "note": "202 U/mL (B03, B04) vs 220 U/mL (B16); the application must keep both"
+    },
+    {
+      "kind": "possible_duplicate",
+      "date": "2026-08-07",
+      "documents": [
+        "B01",
+        "B04",
+        "B22"
+      ]
+    },
+    {
+      "kind": "possible_duplicate",
+      "date": "2026-08-28",
+      "documents": [
+        "B02",
+        "B04"
+      ]
+    },
+    {
+      "kind": "possible_duplicate",
+      "date": "2026-10-09",
+      "documents": [
+        "B04",
+        "B05"
+      ]
+    }
+  ]
+}
