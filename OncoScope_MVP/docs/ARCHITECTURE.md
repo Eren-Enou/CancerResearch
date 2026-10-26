@@ -91,6 +91,18 @@ Every observation (`events`, `labs`, `treatments`, `studies`, `measurements`) ha
 - The proposed M3 architecture (authentication, SQLCipher, AES-GCM documents, key vault, HMAC audit chain, deletion by
   crypto-shredding, parser sandbox) is in `M3_SECURITY_ARCHITECTURE.md`; it is not implemented yet.
 
+## Protected access (M3.1-A)
+
+- `app/auth.py`: single local owner (`local_owner`, Argon2id verifier from `argon2-cffi`), in-memory sessions keyed by
+  the token's SHA-256, idle/lifetime expiry, unlock rate limiting. No cryptographic code of OncoScope's own.
+- `access_control` middleware (every request): refuses non-loopback peers and foreign origins; in protected mode requires
+  a valid bearer session except for health, auth status, setup and unlock; sets `db.current_actor` for the request.
+  `db.audit()` writes that actor and refuses to write without one in protected mode.
+- `ONCOSCOPE_MODE=demo` is the explicit, unauthenticated demonstration mode with its own default database; it refuses a
+  database that has an owner.
+- Frontend: `Root.tsx` gates the workspace behind `LockScreen.tsx`; `api.ts` holds the token in memory and fetches
+  documents/exports as blobs. Details: `M3_1A_PROTECTED_ACCESS.md`.
+
 ## Backup and restore
 
 `app.backup` snapshots SQLite through the backup API, copies the document store and writes `manifest.json`
@@ -103,7 +115,8 @@ document store, backs up any existing target first, restores, and compares the r
 `db.MIGRATIONS` is an ordered list of `(version, name, function)`. `init_db()` (run at API start-up and by the seed script) applies
 each pending migration in its own transaction, records it in `schema_migrations`, and sets `PRAGMA user_version`. Migration 1 is the
 Phase 1 schema with `IF NOT EXISTS`, so unversioned Phase 1 databases adopt it unchanged; migration 2 adds the M2 columns, backfills
-uids, audit `patient_id`/`reason` and the hash chain, then installs the append-only triggers. A database newer than the code is
+uids, audit `patient_id`/`reason` and the hash chain, then installs the append-only triggers; migration 3 adds evidence anchors, provenance and the review queue; migration 4
+adds `local_owner` and the audit actor columns (actors are hashed only when present, so earlier entry hashes are unchanged). A database newer than the code is
 refused. Released migrations are never edited; schema changes append a new migration and a test that upgrades an older database.
 
 ## Corrections

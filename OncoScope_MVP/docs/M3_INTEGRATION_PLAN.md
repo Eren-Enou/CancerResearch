@@ -34,3 +34,10 @@ need a rebase. If a squash is preferred anyway, rebase each dependent branch ont
 force-push of the feature branch, which the workflow allows only with explicit authorization).
 
 Before each merge: CI green on the M3.0 PR (it exercises the combined code), and the PR's own test plan checked.
+
+## M3.1-A (added after M3.0)
+
+The M3.1-A branch `feat/m3.1a-protected-access` was cut from `feat/m3.0-secure-foundations` at `b3975aa` because
+#1–#4 are still unmerged; `main` lacks every later commit. Its PR targets `main` and therefore also shows the commits of
+#1, #3 and #4 until those are merged. Merge it **after #4**, in the same order as above (#2, #1, #3, #4, then M3.1-A);
+it then shows only its own commits. Same rule: no squash-merging of #1, #3 or #4.

@@ -6,6 +6,12 @@ No real names, dates of birth, patient IDs, pathology records, medical images, s
 
 The app does **not** provide user login, per-user authorization, encryption-at-rest, encrypted backup, cloud synchronization, file ingestion safety checks, or a patient permission workflow. It should not be deployed to Vercel, hosted on a home LAN, or shared publicly. Even on localhost, other software running under the same operating-system account might access its local database.
 
+## M3.1-A protected local access
+Protected mode (default) requires an owner-passphrase session for every case-data API request; new audit entries name
+the owner; foreign origins and non-loopback peers are refused; the UI locks and discards case data on lock, inactivity,
+session end and 401. Design, verification and **remaining risks**: `M3_1A_PROTECTED_ACCESS.md`. **No encryption at rest
+yet** — the lock does not protect the files on disk.
+
 ## M3.0 documents
 `M3_DATA_INVENTORY.md` (where data lives), `M3_THREAT_MODEL.md` (prioritised risks, confirmed defects, limitations),
 `M3_SECURITY_ARCHITECTURE.md` (proposed controls), `M3_1_IMPLEMENTATION_PLAN.md` (first increment), and the regression
@@ -13,6 +19,9 @@ suite `backend/tests/test_security.py`. The repository is **public**: fixtures, 
 
 ## Existing controls
 
+- Protected mode: Argon2id passphrase verifier (`argon2-cffi`), 256-bit in-memory session tokens in the `Authorization`
+  header only, idle/lifetime expiry, immediate revocation on lock, rate-limited unlock, actor on every new audit entry.
+- Requests from non-loopback peers, foreign `Origin`s or `Sec-Fetch-Site: cross-site/same-site` are refused (403).
 - FastAPI and Vite examples bind to `127.0.0.1`, not `0.0.0.0`.
 - No third-party AI API, analytics tracker, telemetry integration, or external database.
 - Local synthetic document attachment only: PDF/TXT/PNG/JPEG, ≤ 10 MB, signature-checked, no HTML/SVG/DICOM; served with `nosniff` and `Content-Security-Policy: sandbox`; uploads require `application/octet-stream`, which other web origins cannot send without a CORS preflight the API never grants.

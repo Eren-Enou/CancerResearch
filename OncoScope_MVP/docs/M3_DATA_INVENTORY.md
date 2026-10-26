@@ -30,6 +30,9 @@ Legend — **Readers**: who/what can read it on a typical single-user Windows/ma
 | 14 | `docs/screenshots/*.png` (committed) | Screenshots of fictional cases | **Public** (repository is public) | T16 | Fictional data only; hygiene check limits images to this folder | Policy: screenshots only from fixtures |
 | 15 | Repository files (public on GitHub) | Code, fictional fixtures; `.claude/launch.json` contains a local Windows user path | **Public** | T9, T16 | Hygiene check (databases, stores, backups, secrets, unlabelled fixtures) | Remove local paths from tracked config; keep repository free of any real data permanently |
 
+| 15a | same DB — `local_owner` (schema v4) | Owner display name; Argon2id passphrase verifier (salted; no passphrase) | as #1 | T1, T4 (offline guessing) | One row, cannot be deleted; Argon2id (64 MiB) | Encrypting the DB does not hide the verifier's purpose; key vault (M3.1-B) |
+| 15b | same DB — `audit_log.actor_id/actor_label` | Who made each change since v4 (owner uid and name, or `demo`) | as #1 | T6, T12 | Covered by the entry hash | Keyed chain (M3.1-E) |
+
 ## 2. In memory and in transit
 
 | # | Location | Content | Readers | Threats | Existing protection | Missing controls |
@@ -37,9 +40,12 @@ Legend — **Readers**: who/what can read it on a typical single-user Windows/ma
 | 16 | FastAPI/uvicorn process memory | Request/response bodies, document bytes, extracted text during parsing | Same-user processes with debug rights; crash dumps | T1, T7 | Loopback bind; Host-header check | Parsing isolation (separate low-privilege process); crash-dump policy |
 | 17 | pypdf parsing (in the API process) | Untrusted PDF structures | — | T7 | Upload type/magic checks; 10 MB cap; pypdf decompression limit (a 400 MB bomb is refused in < 1 s; a 40 MB stream parses in ~3.6 s / ~90 MB peak) | Run parsing in a sandboxed subprocess with time/memory limits |
 | 18 | HTTP between browser, Vite dev proxy and API (`127.0.0.1`) | All API traffic, unencrypted on loopback | Same-machine processes able to sniff loopback (admin/root) | T1, T3 | Loopback only; `Cache-Control: no-store`; no CORS grants; JSON-only mutations | Session token per launch (authentication); TLS is optional on loopback |
-| 19 | Browser memory (React state, pdf.js worker, fetched document ArrayBuffers) | The whole open case and documents | Browser extensions with page access; same-user malware | T1, T3 | No `localStorage`/IndexedDB use; URL hash holds only case id and view name | Clear state on lock/logout; extension guidance |
+| 19 | Browser memory (React state, pdf.js worker, fetched document ArrayBuffers) | The whole open case and documents | Browser extensions with page access; same-user malware | T1, T3 | No `localStorage`/IndexedDB use; URL hash holds only case id and view name; **M3.1-A: workspace unmounted (state discarded) on lock, inactivity, session end and 401** | Extension guidance; JS cannot guarantee memory is wiped |
 | 20 | Browser HTTP cache | API responses | Same OS user | T4, T8 | **Fixed in M3.0:** `Cache-Control: no-store` on all `/api` responses | — |
 | 21 | Browser history | URLs only: `/api/patients/<id>/report.md`, `#case=<id>&view=…` (ids, no content). Before M3.0, uploads put the **filename** in the URL | Same OS user | T8 | **Fixed in M3.0:** filename moved to `X-Document-Filename` header | — |
+| 21a | Session tokens (M3.1-A) | Bearer token: server memory (keyed by its SHA-256), browser JS memory (`api.ts`), `Authorization` header on loopback HTTP | Same-user processes with debug rights; admin able to sniff loopback | T1, T3 | Never in URLs, storage, cookies or logs (log test); 15 min idle / 8 h max; revoked on lock/restart; foreign origins refused | TLS on loopback is optional; OS-level process isolation |
+| 21b | Passphrase at unlock/setup | Request body on loopback HTTP; transient in server memory during Argon2id | as 21a | T1 | Not logged; validation errors never echo it; only the verifier is stored | as 21a |
+| 21c | Downloads and opened documents (M3.1-A) | Short-lived `blob:` URLs of authorized responses | Same OS user | T8 | Revoked after use / on unmount; unexpected media types never rendered | — |
 | 22 | Clipboard / print | Whatever the user copies or prints | Other apps; printers | T8 | — | User guidance |
 
 ## 3. Logs, diagnostics and CI

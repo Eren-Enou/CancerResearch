@@ -27,16 +27,16 @@ Likelihood (L) and impact (I) are rated 1–3 for a future real-data deployment;
 
 | ID | Threat | L | I | P | Existing controls | Gap → planned mitigation |
 |---|---|---|---|---|---|---|
-| T1 | Any same-user process reads or changes all cases via the API or the files | 3 | 3 | **9** | Loopback bind; Host check | No authentication; plaintext DB → M3.1 per-launch session token + passphrase-derived key (A) |
+| T1 | Any same-user process reads or changes all cases via the API or the files | 3 | 3 | **9** | Loopback bind; Host check; **M3.1-A: API requires an owner-passphrase session in protected mode** | Files are still plaintext, so the lock is bypassed by reading them directly → passphrase-derived key and encryption (M3.1 B, C) |
 | T4 | Lost/stolen device exposes database, documents, caches, exports | 2 | 3 | **6** | none in-app (OS disk encryption is the user's) | Encryption at rest of DB + documents; require OS disk encryption for real data (M3.1 B, C) |
 | T5 | Backup theft (USB/cloud copy) | 2 | 3 | **6** | Manifest verification | Encrypted backups with independent restore test (M3.1 D) |
-| T12 | Changes cannot be attributed to a person | 3 | 2 | **6** | Audit log records what/when/why | Local identity on every audit entry (M3.1 A) |
+| T12 | Changes cannot be attributed to a person | 3 | 2 | **6** | Audit log records what/when/why; **M3.1-A: authenticated local owner on every new entry** (older entries: unknown) | Identity is self-declared and single-user; CLI backup/restore are unattributed |
 | T13 | Data cannot be deleted (append-only audit keeps old values; no deletion endpoint) | 3 | 2 | **6** | — (by design so far) | Crypto-shredding design: per-case keys; delete key + purge caches (design in M3_SECURITY_ARCHITECTURE §7; M3.2) |
 | T7 | Malicious document exploits pypdf (API process) or pdf.js (browser) | 2 | 3 | **6** | Type/magic checks, 10 MB cap, decompression limit, XFA off, hash check before render | Parse in a sandboxed subprocess with resource limits; keep pdf.js/pypdf patched (M3.2) |
 | T6 | Local attacker rewrites or truncates audit history | 2 | 2 | 4 | Triggers; hash chain; head in backup manifests and `/api/audit/verify` | Keyed chain (HMAC with key from the vault) and head recorded outside the DB (M3.1 E) |
 | T2 | Other OS account reads data files | 1 | 3 | 3 | Default user-profile ACLs if data stays under the profile | Create data dir owner-only (0700 / owner ACL) and verify at start-up (M3.1 F) |
 | T8 | Leakage via logs, caches, browser history, downloads, CI artifacts | 2 | 2 | 4 | **Fixed D1, D2, D3**; no CI artifacts; no input echo; log regression test | Export audit entries; encrypted export option; log allow-list (M3.2) |
-| T3 | Malicious website drives the local API (CSRF, DNS rebinding) | 1 | 3 | 3 | Host allow-list; JSON-only mutations (text/plain, form posts → 415/422); no CORS grant; uploads require non-simple content type | Session token in a custom header closes the remaining class (M3.1 A) |
+| T3 | Malicious website drives the local API (CSRF, DNS rebinding) | 1 | 3 | 3 | Host allow-list; JSON-only mutations; no CORS grant; **M3.1-A: bearer token in a header (not a cookie) and foreign `Origin`/`Sec-Fetch-Site` refused** | — (residual: a website can still detect that a local service answers) |
 | T9 | Developer commits real data or secrets | 1 | 3 | 3 | `.gitignore`; CI hygiene job; synthetic-only rule | Pre-commit hook option; keep fixtures generated |
 | T10 | Supply-chain compromise | 1 | 3 | 3 | `package-lock.json`; `npm audit` clean at time of writing | Python lock file with hashes; dependency review in CI |
 | T15 | Restoring an untrusted backup injects files or a crafted DB | 1 | 2 | 2 | **Fixed D4** (store entries must be hash-named and hash-matching); manifest checks | Open restored DB with SQLite defensive settings; signed manifests once keys exist |
@@ -59,7 +59,7 @@ Confirmed limitations (kept as strict `xfail` tests that will fail once fixed):
 
 | ID | Limitation | Test |
 |---|---|---|
-| L1 (T1) | No authentication: any local caller gets every case | `test_unauthenticated_requests_are_rejected` |
+| ~~L1 (T1)~~ | ~~No authentication~~ — **fixed in M3.1-A** for protected mode; the test now passes and is no longer an xfail | `test_unauthenticated_requests_are_rejected` |
 | L2 (T6) | Removing the newest audit entries leaves a valid-looking chain unless a head was recorded elsewhere | `test_tail_truncation_is_detected_without_external_head` |
 | L3 (T4) | Records are plaintext at rest | `test_database_file_does_not_contain_plaintext_records` |
 

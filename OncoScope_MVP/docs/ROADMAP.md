@@ -65,7 +65,12 @@ data inventory, threat model, proposed security architecture, encryption proof o
 five confirmed defects fixed, plain-language and contrast fixes, PR integration plan. Still open: human usability
 walkthrough, screen-reader review, all controls listed for M3.1/M3.2.
 
-## M3.1 — First security controls (next; synthetic data only)
+## M3.1 — First security controls (in progress; synthetic data only)
+
+**M3.1-A delivered:** protected mode with a local owner (Argon2id verifier), short-lived in-memory sessions, rate-limited
+unlock, foreign-origin and non-loopback refusal, audit actor on every new entry, lock screen and authorized downloads
+(`M3_1A_PROTECTED_ACCESS.md`). **Not encrypted at rest yet.** Next: **M3.1-B key vault and recovery key.**
+
 
 Protected mode with local identity and per-launch session tokens; key vault (Argon2id, random data key, recovery key);
 SQLCipher-encrypted database with a verified migration; AES-GCM document store and encrypted backups with an independent

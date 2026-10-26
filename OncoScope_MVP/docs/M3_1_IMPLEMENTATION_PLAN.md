@@ -7,6 +7,8 @@ M3 review passes. Design reference: `M3_SECURITY_ARCHITECTURE.md` §1–5, 8.
 ## Increments (each a separate PR, in order)
 
 ### M3.1-A Protected mode, local identity and session tokens
+**Status: implemented** (`M3_1A_PROTECTED_ACCESS.md`). Criteria 1–6 are covered by automated tests. Criterion 7 is met
+in effect only: non-loopback peers get 403, but a launcher that refuses to bind remains for M3.1-F.
 Scope: first-run setup (display name + passphrase), unlock/lock endpoints, in-memory session token, auth middleware, actor
 id on every audit entry, UI lock screen. Synthetic "demo mode" without a passphrase remains available **only** for cases
 flagged synthetic, so existing fixtures and tests keep working.
