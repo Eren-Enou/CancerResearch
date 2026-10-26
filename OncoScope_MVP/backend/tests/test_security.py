@@ -93,7 +93,8 @@ def test_binds_only_to_loopback_everywhere_configured():
         assert re.search(pattern, path.read_text(encoding="utf-8")), path
     tracked = subprocess.run(["git", "ls-files"], cwd=REPO, capture_output=True, text=True, check=True).stdout.split()
     for rel in tracked:
-        if rel.endswith((".py", ".ts", ".tsx", ".json", ".yml", ".md")) and "node_modules" not in rel:
+        # Code and configuration only; documentation may discuss 0.0.0.0 as something to refuse.
+        if rel.endswith((".py", ".ts", ".tsx", ".json", ".yml")) and "node_modules" not in rel:
             text = (REPO / rel).read_text(encoding="utf-8", errors="ignore")
             for line in text.splitlines():
                 if "0.0.0.0" in line:
