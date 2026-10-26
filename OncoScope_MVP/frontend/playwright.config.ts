@@ -33,8 +33,9 @@ export default defineConfig({
   workers: 1,
   reporter: 'list',
   use: {
-    // Uses an installed browser (Edge by default on Windows) so no browser download is needed.
-    channel: process.env.PW_CHANNEL ?? 'msedge',
+    // Locally: an installed browser (Edge by default) so no download is needed. CI sets PW_CHANNEL=bundled to use
+    // Playwright's own Chromium (installed in the workflow).
+    channel: process.env.PW_CHANNEL === 'bundled' ? undefined : (process.env.PW_CHANNEL ?? 'msedge'),
     trace: 'retain-on-failure',
   },
   projects: [

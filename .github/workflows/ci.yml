@@ -1,0 +1,95 @@
+# OncoScope CI — fictional fixtures only. No artifacts are uploaded: test databases, reports, traces and screenshots
+# produced during the run stay on the ephemeral runner and are discarded with it.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+
+jobs:
+  hygiene:
+    name: Repository hygiene (no databases, documents, backups or secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install "pypdf>=5,<7"
+      - run: python OncoScope_MVP/scripts/check_repo_hygiene.py
+
+  backend:
+    name: Backend tests and benchmark safety gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: OncoScope_MVP/backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: OncoScope_MVP/backend/requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - run: python -m pytest -q
+      - name: Benchmark gates (main corpus)
+        run: python -m app.benchmark > /dev/null
+      - name: Benchmark gates (held-out corpus)
+        run: python -m app.benchmark --holdout > /dev/null
+
+  frontend:
+    name: TypeScript build and unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: OncoScope_MVP/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: OncoScope_MVP/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+
+  e2e:
+    name: Browser demonstrations (Playwright, Chromium)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    env:
+      PW_CHANNEL: bundled
+      ONCOSCOPE_PYTHON: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: OncoScope_MVP/backend/requirements*.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: OncoScope_MVP/frontend/package-lock.json
+      - run: pip install -r OncoScope_MVP/backend/requirements-dev.txt
+      - run: npm ci
+        working-directory: OncoScope_MVP/frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: OncoScope_MVP/frontend
+      - run: npx playwright test
+        working-directory: OncoScope_MVP/frontend
