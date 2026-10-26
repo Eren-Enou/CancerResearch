@@ -23,7 +23,7 @@ def test_planted_files_are_caught(tmp_path):
         "scan_of_report.pdf": b"%PDF-1.4 fictional",
         "config.py": b"TOKEN = 'ghp_" + b"a" * 36 + b"'",
         "OncoScope_MVP/fixtures/fictional/unlabelled.txt": b"CA-125 12 U/mL",
-        "keys/server.pem": b"-----BEGIN RSA PRIVATE KEY-----",
+        "keys/server.pem": b"-----BEGIN RSA " + b"PRIVATE KEY-----",   # split so this file does not trip the check
     }
     for rel, data in planted.items():
         (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)

@@ -122,8 +122,8 @@ def test_duplicate_import_and_unsupported_documents(client, pid):
     other_case = client.post("/api/patients", json={"label": "Fictional Case Other"}).json()["id"]
     elsewhere = new_source(client, other_case, "Other case, same file")
     assert attach(client, elsewhere["id"], "lab_2026-08-07_imaginary_valley.txt").status_code == 201   # cases are independent
-    put = lambda name, body: client.put(f"/api/sources/{second['id']}/document", params={"filename": name}, content=body,
-                                        headers={"Content-Type": "application/octet-stream"})
+    put = lambda name, body: client.put(f"/api/sources/{second['id']}/document", content=body,
+                                        headers={"Content-Type": "application/octet-stream", "X-Document-Filename": name})
     assert put("scan.dcm", b"DICM" * 10).status_code == 422
     assert put("page.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>").status_code == 422
     assert put("broken.pdf", b"%PDF-1.4 truncated nonsense").status_code == 201    # signature ok, text layer unreadable

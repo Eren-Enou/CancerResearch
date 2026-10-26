@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -135,8 +136,8 @@ def evaluate_system(manifest: dict, documents: Path) -> dict:
             for d in manifest["documents"]:
                 s = c.post("/api/sources", json={"patient_id": pid, "label": f"{d['id']} {d['layout']}", "kind": "lab" if d["category"] == "lab" else "other",
                                                  "source_date": d["source_date"]}).json()
-                c.put(f"/api/sources/{s['id']}/document", params={"filename": d["file"]}, content=(documents / d["file"]).read_bytes(),
-                      headers={"Content-Type": "application/octet-stream"}).raise_for_status()
+                c.put(f"/api/sources/{s['id']}/document", content=(documents / d["file"]).read_bytes(),
+                      headers={"Content-Type": "application/octet-stream", "X-Document-Filename": d["file"]}).raise_for_status()
                 source_of[d["id"]] = s["id"]
             first = second = 0
             for d in manifest["documents"]:
@@ -189,6 +190,7 @@ def evaluate_system(manifest: dict, documents: Path) -> dict:
             os.environ.pop("ONCOSCOPE_DB_PATH", None)
         else:
             os.environ["ONCOSCOPE_DB_PATH"] = previous
+        shutil.rmtree(tmp, ignore_errors=True)   # the throwaway database and document copies do not outlive the run
 
 
 def run(manifest_path: Path = BENCH / "manifest.json", documents: Path = BENCH / "documents") -> dict:

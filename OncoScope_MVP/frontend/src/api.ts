@@ -47,7 +47,9 @@ export function readBytes(file: Blob): Promise<ArrayBuffer> {
 }
 
 export async function uploadDocument<T>(sourceId: number, file: File): Promise<T> {
-  return request<T>(`/sources/${sourceId}/document?filename=${encodeURIComponent(file.name)}`, {
-    method: 'PUT', body: await readBytes(file), headers: { 'Content-Type': 'application/octet-stream' },
+  // The filename goes in a header, not the URL, so it stays out of server access logs.
+  return request<T>(`/sources/${sourceId}/document`, {
+    method: 'PUT', body: await readBytes(file),
+    headers: { 'Content-Type': 'application/octet-stream', 'X-Document-Filename': encodeURIComponent(file.name) },
   });
 }

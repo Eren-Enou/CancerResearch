@@ -284,6 +284,16 @@ def audit(conn: sqlite3.Connection, entity: str, entity_id: int, action: str, de
     )
 
 
+def audit_head(conn: sqlite3.Connection) -> dict:
+    """The chain's last entry. Recorded outside the database (backup manifests, a note), it exposes truncation that the
+    chain itself cannot: deleting the newest entries leaves a shorter chain that still verifies."""
+    row = conn.execute("SELECT count(*) AS n, max(id) AS last_id FROM audit_log").fetchone()
+    last = conn.execute("SELECT entry_hash FROM audit_log ORDER BY id DESC LIMIT 1").fetchone()
+    return {"entries": row["n"] if isinstance(row, sqlite3.Row) else row[0],
+            "last_id": row["last_id"] if isinstance(row, sqlite3.Row) else row[1],
+            "last_hash": (last[0] if last else None)}
+
+
 def verify_audit_chain(conn: sqlite3.Connection) -> dict:
     """Recompute every entry hash. Detects edits made outside the app (e.g. with triggers dropped)."""
     prev = None

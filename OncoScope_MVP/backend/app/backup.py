@@ -8,13 +8,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .db import database_path, document_dir, now_utc, verify_audit_chain
+from .db import audit_head, database_path, document_dir, now_utc, verify_audit_chain
 
 MANIFEST_TABLES = ("patients", "sources", "events", "labs", "treatments", "studies", "measurements", "extractions",
                    "audit_log", "schema_migrations")
@@ -22,6 +23,28 @@ MANIFEST_TABLES = ("patients", "sources", "events", "labs", "treatments", "studi
 
 def _document_path(root: Path, sha256: str) -> Path:
     return root / sha256[:2] / sha256
+
+
+STORE_ENTRY = re.compile(r"^[0-9a-f]{2}/[0-9a-f]{64}$")
+
+
+def unexpected_store_files(doc_root: Path) -> list[str]:
+    """Anything in a document store that is not '<2 hex>/<64 hex>' whose bytes hash to its own name."""
+    problems = []
+    if not doc_root.exists():
+        return problems
+    for path in sorted(doc_root.rglob("*")):
+        rel = path.relative_to(doc_root).as_posix()
+        if path.is_symlink():
+            problems.append(f"{rel}: symbolic link")
+        elif path.is_dir():
+            if not re.fullmatch(r"[0-9a-f]{2}", rel):
+                problems.append(f"{rel}/: unexpected folder")
+        elif not STORE_ENTRY.match(rel):
+            problems.append(f"{rel}: not a content-addressed document file")
+        elif hashlib.sha256(path.read_bytes()).hexdigest() != path.name or path.parent.name != path.name[:2]:
+            problems.append(f"{rel}: bytes do not match the file's hash name")
+    return problems
 
 
 def build_manifest(db_path: Path, doc_root: Path) -> dict:
@@ -49,6 +72,7 @@ def build_manifest(db_path: Path, doc_root: Path) -> dict:
             "schema_version": conn.execute("PRAGMA user_version").fetchone()[0],
             "integrity_check": conn.execute("PRAGMA integrity_check").fetchone()[0],
             "audit_chain": verify_audit_chain(conn) if "audit_log" in existing else None,
+            "audit_head": audit_head(conn) if "audit_log" in existing else None,
             "tables": tables, "documents": documents,
         }
     finally:
@@ -68,6 +92,8 @@ def compare_manifests(expected: dict, actual: dict) -> list[str]:
         if got != info:
             problems.append(f"table {table}: expected {info['rows']} rows / {info['sha256'][:12]}, found "
                             f"{(got or {}).get('rows')} rows / {((got or {}).get('sha256') or '')[:12]}")
+    if expected.get("audit_head") and actual.get("audit_head") != expected["audit_head"]:
+        problems.append(f"audit head {actual.get('audit_head')} != recorded {expected['audit_head']} (entries removed or added)")
     for sha in expected["documents"]:
         got = actual["documents"].get(sha)
         if not got or not got["valid"]:
@@ -117,7 +143,7 @@ def verify_backup(backup_dir: Path) -> dict:
         return {"ok": False, "problems": ["backup is missing manifest.json or oncoscope.sqlite3"], "manifest": None}
     expected = json.loads(manifest_path.read_text(encoding="utf-8"))
     actual = build_manifest(backup_dir / "oncoscope.sqlite3", backup_dir / "documents")
-    problems = compare_manifests(expected, actual)
+    problems = compare_manifests(expected, actual) + [f"documents/{p}" for p in unexpected_store_files(backup_dir / "documents")]
     return {"ok": not problems, "problems": problems, "manifest": expected}
 
 

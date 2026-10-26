@@ -46,6 +46,6 @@ describe('ImportDocument', () => {
     fireEvent.change(screen.getByLabelText('File (PDF, TXT, PNG, JPEG)'), { target: { files: [new File(['X'], 'B01_lab.txt')] } });
     fireEvent.submit(screen.getByRole('form', { name: 'Import a fictional document' }));  // jsdom cannot see test-assigned files for 'required'
     await waitFor(() => expect(onImported).toHaveBeenCalledWith(9));
-    expect(calls).toEqual(['POST /api/sources', 'PUT /api/sources/9/document?filename=B01_lab.txt']);
+    expect(calls).toEqual(['POST /api/sources', 'PUT /api/sources/9/document']);
   });
 });

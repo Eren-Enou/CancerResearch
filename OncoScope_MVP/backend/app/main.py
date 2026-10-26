@@ -2,6 +2,7 @@
 from contextlib import asynccontextmanager
 import json
 import sqlite3
+from urllib.parse import unquote
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -11,7 +12,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import documents, extraction
 from .db import (
-    OBSERVATION_TABLES, RECORD_TABLES, SCHEMA_VERSION, audit, connection, init_db, insert_record, now_utc, update_record,
+    OBSERVATION_TABLES, RECORD_TABLES, SCHEMA_VERSION, audit, audit_head, connection, init_db, insert_record, now_utc, update_record,
     verify_audit_chain,
 )
 from .models import (
@@ -36,6 +37,18 @@ app = FastAPI(
 )
 # Rejects requests whose Host header is not loopback (DNS-rebinding protection for a local service).
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
+
+
+@app.middleware("http")
+async def no_store_headers(request: Request, call_next):
+    # Case content must not land in browser or proxy caches; documents and reports are fetched fresh every time.
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers["Referrer-Policy"] = "no-referrer"
+    return response
 
 
 
@@ -107,7 +120,10 @@ def document_pages(conn: sqlite3.Connection, source: dict) -> list[str]:
     cached = rows(conn, "SELECT text FROM document_text WHERE document_sha256=? AND extractor=? ORDER BY page", (sha, extractor))
     if cached:
         return [r["text"] for r in cached]
-    data, actual = documents.load_verified(sha)
+    try:
+        data, actual = documents.load_verified(sha)
+    except documents.DocumentError as exc:
+        raise HTTPException(409, "The recorded document reference is invalid; the source record may have been altered") from exc
     if data is None or actual != sha:
         raise HTTPException(409, f"Document of source #{source['id']} is missing or fails its SHA-256 check")
     try:
@@ -364,13 +380,17 @@ def record_history(entity: str, record_id: int):
 # --- Source documents ----------------------------------------------------------------------------
 
 @app.put("/api/sources/{source_id}/document", status_code=201)
-async def attach_document(source_id: int, request: Request, filename: str = Query(min_length=1, max_length=255)):
+async def attach_document(source_id: int, request: Request):
+    # The filename travels in a header, not the URL, so it never appears in access logs or browser history.
     # application/octet-stream is not a CORS "simple" type, so other web origins cannot send this cross-site.
     if request.headers.get("content-type", "").split(";")[0].strip() != "application/octet-stream":
         raise HTTPException(415, "Send the document body as application/octet-stream")
     declared = request.headers.get("content-length")
     if declared and declared.isdigit() and int(declared) > documents.MAX_DOCUMENT_BYTES:
         raise HTTPException(413, "Document exceeds the 10 MB limit")
+    filename = unquote(request.headers.get("x-document-filename", ""))
+    if not 1 <= len(filename) <= 255:
+        raise HTTPException(422, "Send the original filename (1-255 characters) in the X-Document-Filename header")
     data = await request.body()
     try:
         name = documents.safe_filename(filename)
@@ -397,7 +417,10 @@ def _document_or_error(source_id: int) -> tuple[dict, bytes | None, str | None]:
         source = get_record(conn, "sources", source_id)
     if not source["document_sha256"]:
         raise HTTPException(404, "No document attached to this source")
-    data, actual = documents.load_verified(source["document_sha256"])
+    try:
+        data, actual = documents.load_verified(source["document_sha256"])
+    except documents.DocumentError as exc:  # a stored reference that is not a valid hash: refuse, never touch the path
+        raise HTTPException(409, "The recorded document reference is invalid; the source record may have been altered") from exc
     return source, data, actual
 
 
@@ -638,8 +661,9 @@ def evidence_findings(patient_id: int):
 
 @app.get("/api/audit/verify")
 def audit_verify():
+    """Chain validity plus its head. Compare the head with one recorded earlier to detect removed newest entries."""
     with connection() as conn:
-        return verify_audit_chain(conn)
+        return {**verify_audit_chain(conn), "head": audit_head(conn)}
 
 
 # --- Report and export --------------------------------------------------------------------------

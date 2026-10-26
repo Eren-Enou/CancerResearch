@@ -10,8 +10,8 @@ def fixture_bytes(name: str) -> bytes:
 
 
 def attach(client, source_id: int, name: str):
-    return client.put(f"/api/sources/{source_id}/document", params={"filename": name}, content=fixture_bytes(name),
-                      headers={"Content-Type": "application/octet-stream"})
+    return client.put(f"/api/sources/{source_id}/document", content=fixture_bytes(name),
+                      headers={"Content-Type": "application/octet-stream", "X-Document-Filename": name})
 
 
 def new_source(client, pid: int, label: str, kind: str = "lab", document: str | None = None, source_date: str | None = None) -> dict:
