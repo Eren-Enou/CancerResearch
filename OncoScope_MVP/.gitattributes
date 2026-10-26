@@ -1,0 +1,2 @@
+# Fictional fixture documents are hashed; never let git rewrite their bytes.
+fixtures/fictional/** binary

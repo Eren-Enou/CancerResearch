@@ -377,7 +377,7 @@ def test_phase1_database_migrates_in_place(tmp_path, monkeypatch):
     db.init_db()  # idempotent
     with db.connection() as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
-        assert [r[0] for r in conn.execute("SELECT version FROM schema_migrations ORDER BY version")] == [1, 2]
+        assert [r[0] for r in conn.execute("SELECT version FROM schema_migrations ORDER BY version")] == list(range(1, db.SCHEMA_VERSION + 1))
         lab = dict(conn.execute("SELECT * FROM labs").fetchone())
         assert (lab["value"], lab["unit"], lab["revision"], lab["verification_status"]) == (42, "U/mL", 1, "entered")
         assert len(lab["uid"]) == 36

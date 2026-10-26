@@ -15,6 +15,8 @@ DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "oncoscope.sqli
 
 # Tables holding source-linked patient records. Names are trusted server-side constants.
 RECORD_TABLES = ("sources", "events", "labs", "treatments", "studies", "measurements")
+OBSERVATION_TABLES = RECORD_TABLES[1:]
+PROVENANCES = ("transcribed", "extracted", "user_observation")
 VERIFICATION_STATES = ("entered", "reviewed", "verified")
 
 
@@ -161,21 +163,50 @@ def _m2_provenance_and_audit(conn: sqlite3.Connection) -> None:
                     BEGIN SELECT RAISE(ABORT, 'audit_log is append-only'); END""")
 
 
+def _m3_evidence_and_extraction(conn: sqlite3.Connection) -> None:
+    conn.execute("""CREATE TABLE extractions (
+      id INTEGER PRIMARY KEY, uid TEXT NOT NULL UNIQUE,
+      patient_id INTEGER NOT NULL REFERENCES patients(id), source_id INTEGER NOT NULL REFERENCES sources(id),
+      document_sha256 TEXT NOT NULL, parser TEXT NOT NULL, parser_version TEXT NOT NULL,
+      page INTEGER NOT NULL CHECK(page > 0), start INTEGER NOT NULL CHECK(start >= 0), "end" INTEGER NOT NULL,
+      original_text TEXT NOT NULL, proposed_json TEXT NOT NULL, issues_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','accepted','rejected')),
+      accepted_json TEXT, decision_reason TEXT, decided_at TEXT,
+      record_entity TEXT, record_id INTEGER, created_at TEXT NOT NULL,
+      CHECK("end" > start),
+      UNIQUE(source_id, parser, parser_version, page, start)
+    )""")
+    conn.execute("CREATE INDEX idx_extractions_patient ON extractions(patient_id, status)")
+    # Derived, reproducible text of an attached document; keyed by hash and extractor version, never by source.
+    conn.execute("""CREATE TABLE document_text (
+      document_sha256 TEXT NOT NULL, extractor TEXT NOT NULL, page INTEGER NOT NULL CHECK(page > 0), text TEXT NOT NULL,
+      PRIMARY KEY(document_sha256, extractor, page)
+    )""")
+    for table in RECORD_TABLES[1:]:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN provenance TEXT NOT NULL DEFAULT 'transcribed' "
+                     "CHECK(provenance IN ('transcribed','extracted','user_observation'))")
+        for column in ("anchor_page INTEGER", "anchor_quote TEXT", "anchor_start INTEGER", "anchor_end INTEGER",
+                       "anchor_region TEXT", "extraction_id INTEGER REFERENCES extractions(id)"):
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column}")
+    conn.execute("CREATE INDEX idx_sources_document ON sources(patient_id, document_sha256)")
+
+
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "phase1 baseline schema", _m1_phase1_baseline),
     (2, "record uids, revisions, verification status, source documents, hash-chained audit", _m2_provenance_and_audit),
+    (3, "evidence anchors, provenance, extraction review queue, document text cache", _m3_evidence_and_extraction),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
 
-def migrate(conn: sqlite3.Connection) -> list[int]:
-    """Apply pending migrations in order. Returns the versions applied."""
+def migrate(conn: sqlite3.Connection, up_to: int | None = None) -> list[int]:
+    """Apply pending migrations in order (optionally stopping at `up_to`, for upgrade tests). Returns versions applied."""
     applied = []
     current = conn.execute("PRAGMA user_version").fetchone()[0]
     if current > SCHEMA_VERSION:
         raise RuntimeError(f"Database schema v{current} is newer than this application (v{SCHEMA_VERSION})")
     for version, name, step in MIGRATIONS:
-        if version <= current:
+        if version <= current or (up_to is not None and version > up_to):
             continue
         conn.execute("BEGIN IMMEDIATE")
         try:
@@ -206,7 +237,7 @@ def init_db() -> None:
 def insert_record(conn: sqlite3.Connection, table: str, data: dict) -> dict:
     # These table/column names come only from trusted server-side constants.
     data = {**data, "uid": str(uuid.uuid4())}
-    data.setdefault("entered_at" if table != "patients" else "created_at", now_utc())
+    data.setdefault("created_at" if table in ("patients", "extractions") else "entered_at", now_utc())
     columns = ", ".join(data)
     slots = ", ".join("?" for _ in data)
     cursor = conn.execute(f"INSERT INTO {table} ({columns}) VALUES ({slots})", tuple(data.values()))

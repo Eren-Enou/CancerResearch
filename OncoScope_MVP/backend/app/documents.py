@@ -69,6 +69,75 @@ def store(sha256: str, data: bytes) -> None:
     temp.replace(target)
 
 
+def extractor_for(media_type: str) -> str | None:
+    """Identifies the deterministic text extractor. Its version is part of every cached text and anchor check."""
+    if media_type.startswith("text/plain"):
+        return "utf8-text-v1"
+    if media_type == "application/pdf":
+        import pypdf
+        return f"pypdf-{pypdf.__version__}-v1"
+    return None  # images carry no text layer; anchor them by region
+
+
+def extract_pages(data: bytes, media_type: str) -> list[str]:
+    """Page texts. TXT: newlines normalised to \\n, form feeds split pages. PDF: pypdf text layer per page."""
+    if media_type.startswith("text/plain"):
+        text = data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+        return text.split("\f")
+    if media_type == "application/pdf":
+        import io
+        import pypdf
+        try:
+            reader = pypdf.PdfReader(io.BytesIO(data))
+            return [(page.extract_text() or "").replace("\r\n", "\n") for page in reader.pages]
+        except Exception as exc:  # malformed PDFs are reported, never partially trusted
+            raise DocumentError(f"PDF text layer could not be read: {exc.__class__.__name__}") from exc
+    return []
+
+
+def page_count(data: bytes, media_type: str) -> int:
+    if media_type.startswith("image/"):
+        return 1
+    return len(extract_pages(data, media_type))
+
+
+REGION_PATTERN = re.compile(r"^\d{1,3}(\.\d+)?,\d{1,3}(\.\d+)?,\d{1,3}(\.\d+)?,\d{1,3}(\.\d+)?$")
+
+
+def parse_region(region: str) -> tuple[float, float, float, float]:
+    """Region as 'x,y,w,h' percentages of the page or image."""
+    if not REGION_PATTERN.match(region):
+        raise DocumentError("Region must be 'x,y,w,h' in percent, e.g. '10,20,30,5'")
+    x, y, w, h = (float(v) for v in region.split(","))
+    if w <= 0 or h <= 0 or x + w > 100 or y + h > 100:
+        raise DocumentError("Region must have positive size and lie within 0–100% of the page")
+    return x, y, w, h
+
+
+def resolve_quote(pages: list[str], page: int | None, quote: str, start: int | None, end: int | None) -> tuple[int, int, int]:
+    """Locates a quoted passage exactly. Returns (page, start, end) or raises when absent or ambiguous."""
+    if page is not None and not 1 <= page <= len(pages):
+        raise DocumentError(f"Page {page} does not exist; the document has {len(pages)} page(s)")
+    candidates = [page] if page else list(range(1, len(pages) + 1))
+    if start is not None or end is not None:
+        if start is None or end is None or page is None:
+            raise DocumentError("Offsets need anchor_page, anchor_start and anchor_end together")
+        if pages[page - 1][start:end] != quote:
+            raise DocumentError(f"The quoted passage does not match page {page} at characters {start}–{end}")
+        return page, start, end
+    hits = []
+    for p in candidates:
+        text, i = pages[p - 1], pages[p - 1].find(quote)
+        while i != -1:
+            hits.append((p, i, i + len(quote)))
+            i = text.find(quote, i + 1)
+    if not hits:
+        raise DocumentError("The quoted passage does not occur in the document text" + (f" on page {page}" if page else ""))
+    if len(hits) > 1:
+        raise DocumentError(f"The quoted passage occurs {len(hits)} times; select the exact passage in the document viewer")
+    return hits[0]
+
+
 def load_verified(sha256: str) -> tuple[bytes | None, str | None]:
     """Returns (bytes, actual_sha256). bytes is None when the stored file is missing."""
     target = path_for(sha256)

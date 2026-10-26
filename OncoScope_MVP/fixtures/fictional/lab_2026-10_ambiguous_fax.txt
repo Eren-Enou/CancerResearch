@@ -1,0 +1,8 @@
+FICTIONAL DOCUMENT - SYNTHETIC TEST DATA - NOT A REAL PATIENT
+FICTIONAL FAXED RESULT (POOR COPY)
+Patient: Fictional Case M25
+Collection date: 09/10/2026
+
+CA-125   188   U/mL
+CA-125 (repeat)   <5   U/mL
+CA 125   result pending

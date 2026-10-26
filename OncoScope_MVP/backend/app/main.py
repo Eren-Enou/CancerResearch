@@ -10,10 +10,10 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import documents
 from .db import (
-    RECORD_TABLES, SCHEMA_VERSION, connection, init_db, insert_record, now_utc, update_record, verify_audit_chain,
+    OBSERVATION_TABLES, RECORD_TABLES, SCHEMA_VERSION, connection, init_db, insert_record, now_utc, update_record, verify_audit_chain,
 )
 from .models import (
-    CREATE_MODELS, EDITABLE_FIELDS, NULLABLE_FIELDS, Correction, EventCreate, LabCorrection, LabCreate,
+    ANCHOR_FIELDS, CREATE_MODELS, EDITABLE_FIELDS, NULLABLE_FIELDS, Correction, EventCreate, LabCorrection, LabCreate,
     MeasurementCreate, PatientCreate, SourceCreate, StatusChange, StudyCreate, TreatmentCreate,
 )
 from .reporting import build_csv, build_export, build_report, patient_records
@@ -27,7 +27,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="OncoScope local API", version="0.2.0", lifespan=lifespan,
+    title="OncoScope local API", version="0.2.5", lifespan=lifespan,
     description="Local-only prototype. Organizes sources; does not diagnose, stage, or assess clinical response.",
 )
 # Rejects requests whose Host header is not loopback (DNS-rebinding protection for a local service).
@@ -94,11 +94,63 @@ def check_references(conn: sqlite3.Connection, table: str, data: dict, record_id
                                      f"letter case. Use '{clash}' so the values stay in one series.")
 
 
+def document_pages(conn: sqlite3.Connection, source: dict) -> list[str]:
+    """Text pages of a source's attached document, extracted deterministically and cached by hash + extractor."""
+    sha, media = source["document_sha256"], source["document_media_type"]
+    extractor = documents.extractor_for(media)
+    if extractor is None:
+        return []
+    cached = rows(conn, "SELECT text FROM document_text WHERE document_sha256=? AND extractor=? ORDER BY page", (sha, extractor))
+    if cached:
+        return [r["text"] for r in cached]
+    data, actual = documents.load_verified(sha)
+    if data is None or actual != sha:
+        raise HTTPException(409, f"Document of source #{source['id']} is missing or fails its SHA-256 check")
+    try:
+        pages = documents.extract_pages(data, media)
+    except documents.DocumentError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    conn.executemany("INSERT OR IGNORE INTO document_text(document_sha256, extractor, page, text) VALUES(?,?,?,?)",
+                     [(sha, extractor, i, text) for i, text in enumerate(pages, 1)])
+    return pages
+
+
+def apply_evidence(conn: sqlite3.Connection, table: str, data: dict) -> dict:
+    """Checks an observation's anchor against its source document and resolves exact character offsets."""
+    if table not in OBSERVATION_TABLES or not any(data.get(f) is not None for f in ANCHOR_FIELDS):
+        return data
+    source = get_record(conn, "sources", data["source_id"])
+    if not source["document_sha256"]:
+        raise HTTPException(422, f"Attach the document to source #{source['id']} before anchoring an observation to it")
+    media = source["document_media_type"]
+    try:
+        if data.get("anchor_region") is not None:
+            if media.startswith("text/plain"):
+                raise documents.DocumentError("Text documents are anchored by quoted passage, not by region")
+            documents.parse_region(data["anchor_region"])
+        if data.get("anchor_quote") is not None:
+            if media.startswith("image/"):
+                raise documents.DocumentError("Image documents have no text layer; anchor them by region (x,y,w,h)")
+            page, start, end = documents.resolve_quote(document_pages(conn, source), data.get("anchor_page"),
+                                                       data["anchor_quote"], data.get("anchor_start"), data.get("anchor_end"))
+            return {**data, "anchor_page": page, "anchor_start": start, "anchor_end": end}
+        if data.get("anchor_page") is not None:
+            count = 1 if media.startswith("image/") else len(document_pages(conn, source))
+            if data["anchor_page"] > count:
+                raise documents.DocumentError(f"Page {data['anchor_page']} does not exist; the document has {count} page(s)")
+    except documents.DocumentError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return data
+
+
 def create(table: str, payload: BaseModel) -> dict:
     data = payload.model_dump(mode="json")
+    if data.get("provenance") == "extracted":
+        raise HTTPException(422, "Extracted observations are created only by accepting a review-queue proposal")
     with connection() as conn:
         ensure_patient(conn, data["patient_id"])
         check_references(conn, table, data)
+        data = apply_evidence(conn, table, data)
         try:
             return insert_record(conn, table, data)
         except sqlite3.IntegrityError as exc:
@@ -118,16 +170,22 @@ def correct(entity: str, record_id: int, correction: Correction) -> dict:
         for name, value in correction.changes.items():
             if value is None and (entity, name) not in NULLABLE_FIELDS:
                 raise HTTPException(422, f"{name} cannot be cleared")
+        if "provenance" in correction.changes and "extracted" in (correction.changes["provenance"], before.get("provenance")):
+            raise HTTPException(422, "The provenance of an extracted observation is fixed by its review-queue decision")
         merged = {name: before[name] for name in EDITABLE_FIELDS[entity]} | correction.changes
+        if entity in OBSERVATION_TABLES and {"anchor_quote", "anchor_page", "source_id"} & set(correction.changes) \
+                and "anchor_start" not in correction.changes:
+            merged |= {"anchor_start": None, "anchor_end": None}  # re-locate the passage instead of trusting stale offsets
         try:
             validated = CREATE_MODELS[entity].model_validate({**merged, "patient_id": before["patient_id"]})
         except ValidationError as exc:
             raise validation_error(exc) from exc
         data = validated.model_dump(mode="json")
-        changes = {name: data[name] for name in correction.changes if data[name] != before[name]}
+        check_references(conn, entity, data, record_id)
+        data = apply_evidence(conn, entity, data)
+        changes = {name: data[name] for name in EDITABLE_FIELDS[entity] if data[name] != before[name]}
         if not changes:
             raise HTTPException(422, "Correction does not change any stored value")
-        check_references(conn, entity, data, record_id)
         # A changed value is no longer the value that was reviewed or verified.
         if before["verification_status"] != "entered":
             changes["verification_status"] = "entered"
@@ -314,6 +372,11 @@ async def attach_document(source_id: int, request: Request, filename: str = Quer
         source = get_record(conn, "sources", source_id)
         if source["document_sha256"]:
             raise HTTPException(409, "A document is already attached to this source; attached documents are immutable")
+        twin = conn.execute("SELECT id, label FROM sources WHERE patient_id=? AND document_sha256=?",
+                            (source["patient_id"], sha256)).fetchone()
+        if twin:
+            raise HTTPException(409, f"Duplicate import: this exact file is already attached to source #{twin['id']} "
+                                     f"({twin['label']}). Link observations to that source instead.")
         documents.store(sha256, data)
         changes = {"document_sha256": sha256, "document_filename": name, "document_media_type": media_type,
                    "document_size": len(data), "document_attached_at": now_utc()}
@@ -334,6 +397,21 @@ def verify_document(source_id: int):
     source, data, actual = _document_or_error(source_id)
     return {"source_id": source_id, "expected_sha256": source["document_sha256"], "actual_sha256": actual,
             "present": data is not None, "valid": actual == source["document_sha256"]}
+
+
+@app.get("/api/sources/{source_id}/document/text")
+def document_text(source_id: int):
+    """Deterministic text layer used for anchoring and extraction. The original file is never modified."""
+    with connection() as conn:
+        source = get_record(conn, "sources", source_id)
+        if not source["document_sha256"]:
+            raise HTTPException(404, "No document attached to this source")
+        media = source["document_media_type"]
+        pages = document_pages(conn, source)
+    return {"source_id": source_id, "document_sha256": source["document_sha256"], "media_type": media,
+            "filename": source["document_filename"], "extractor": documents.extractor_for(media),
+            "pages": [{"page": i, "text": t} for i, t in enumerate(pages, 1)],
+            "has_text_layer": any(t.strip() for t in pages)}
 
 
 @app.get("/api/sources/{source_id}/document")
@@ -362,7 +440,9 @@ def timeline(patient_id: int):
         def add(entity: str, r: dict, day: str, label: str):
             combined.append({"id": r["id"], "uid": r["uid"], "entity": entity, "kind": ENTITY_LABEL[entity],
                              "date": day, "label": label, "source_id": r["source_id"], "revision": r["revision"],
-                             "verification_status": r["verification_status"]})
+                             "verification_status": r["verification_status"], "provenance": r["provenance"],
+                             "anchor_page": r["anchor_page"], "anchor_start": r["anchor_start"], "anchor_end": r["anchor_end"],
+                             "anchor_region": r["anchor_region"], "anchor_quote": r["anchor_quote"]})
 
         for r in records["events"]:
             add("events", r, r["date"], r["title"])
