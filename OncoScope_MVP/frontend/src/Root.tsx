@@ -40,6 +40,13 @@ export default function Root() {
     endSession(message);
   }, [endSession]);
 
+  // The server ends every session after max_seconds; clear the screen then too, instead of waiting for the next request.
+  useEffect(() => {
+    if (!session) return;
+    const timer = window.setTimeout(() => endSession('Your session ended. Unlock again to continue.'), session.max_seconds * 1000);
+    return () => window.clearTimeout(timer);
+  }, [session, endSession]);
+
   // Inactivity lock on the client, matching the server's idle limit (which also ends the session on its side).
   useEffect(() => {
     if (!session) return;

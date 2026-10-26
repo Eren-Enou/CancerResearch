@@ -153,6 +153,22 @@ describe('Root', () => {
     expect(screen.queryByText('Fictional Case Alpha')).toBeNull();
   });
 
+  it('clears the screen when the session lifetime ends, even while the user is active', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    route({ '/auth/status': () => json({ mode: 'protected', setup_required: false }), '/auth/unlock': () => json({ ...session, max_seconds: 120 }),
+      '/patients': () => json([{ id: 1, uid: 'u', label: 'Fictional Case Alpha', is_synthetic: 1 }]) });
+    render(<Root />);
+    fireEvent.change(await screen.findByLabelText('Passphrase'), { target: { value: 'fictional passphrase' } });
+    fireEvent.submit(screen.getByRole('button', { name: 'Unlock' }));
+    await screen.findByText('Fictional Case Alpha');
+    for (let i = 0; i < 3; i++) { await act(async () => { vi.advanceTimersByTime(39_000); }); fireEvent.keyDown(window, { key: 'a' }); }
+    expect(screen.queryByText('Fictional Case Alpha')).not.toBeNull();
+    await act(async () => { vi.advanceTimersByTime(4_000); });
+    await screen.findByText('Your session ended. Unlock again to continue.');
+    expect(screen.queryByText('Fictional Case Alpha')).toBeNull();
+    expect(hasSession()).toBe(false);
+  });
+
   it('runs demonstration mode without a lock screen and says so', async () => {
     route({ '/auth/status': () => json({ mode: 'demo', setup_required: false }) });
     render(<Root />);
