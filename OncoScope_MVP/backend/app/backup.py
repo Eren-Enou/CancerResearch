@@ -15,7 +15,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .db import audit_head, database_path, document_dir, now_utc, verify_audit_chain
+from . import vault as key_vault
+from .db import audit_head, database_path, document_dir, now_utc, vault_path, verify_audit_chain
 
 MANIFEST_TABLES = ("patients", "sources", "events", "labs", "treatments", "studies", "measurements", "extractions",
                    "audit_log", "schema_migrations", "local_owner")
@@ -47,7 +48,23 @@ def unexpected_store_files(doc_root: Path) -> list[str]:
     return problems
 
 
-def build_manifest(db_path: Path, doc_root: Path) -> dict:
+VAULT_FILE = "oncoscope-vault.json"
+
+
+def vault_summary(path: Path) -> dict | None:
+    """Identifies a key vault file without opening it (it holds only wrapped keys). None when there is no vault."""
+    if not path.exists():
+        return None
+    data = path.read_bytes()
+    try:
+        doc = key_vault.parse(data)
+        ids = {"vault_id": doc["vault_id"], "key_id": doc["key_id"], "valid": True}
+    except key_vault.VaultError as exc:
+        ids = {"vault_id": None, "key_id": None, "valid": False, "problem": exc.message}
+    return {"sha256": hashlib.sha256(data).hexdigest(), **ids}
+
+
+def build_manifest(db_path: Path, doc_root: Path, vault_file: Path | None = None) -> dict:
     """Describes a database + document store precisely enough to prove a restore reproduced it."""
     conn = sqlite3.connect(f"file:{db_path.as_posix()}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
@@ -74,6 +91,7 @@ def build_manifest(db_path: Path, doc_root: Path) -> dict:
             "audit_chain": verify_audit_chain(conn) if "audit_log" in existing else None,
             "audit_head": audit_head(conn) if "audit_log" in existing else None,
             "tables": tables, "documents": documents,
+            "vault": vault_summary(vault_file) if vault_file else None,
         }
     finally:
         conn.close()
@@ -94,6 +112,10 @@ def compare_manifests(expected: dict, actual: dict) -> list[str]:
                             f"{(got or {}).get('rows')} rows / {((got or {}).get('sha256') or '')[:12]}")
     if expected.get("audit_head") and actual.get("audit_head") != expected["audit_head"]:
         problems.append(f"audit head {actual.get('audit_head')} != recorded {expected['audit_head']} (entries removed or added)")
+    if expected.get("vault") and (actual.get("vault") or {}).get("sha256") != expected["vault"]["sha256"]:
+        problems.append("key vault missing or different from the one recorded in the manifest")
+    elif expected.get("vault") and not expected["vault"]["valid"]:
+        problems.append(f"key vault in the backup is not usable: {expected['vault'].get('problem')}")
     for sha in expected["documents"]:
         got = actual["documents"].get(sha)
         if not got or not got["valid"]:
@@ -101,7 +123,7 @@ def compare_manifests(expected: dict, actual: dict) -> list[str]:
     return problems
 
 
-def _snapshot(db_path: Path, doc_root: Path, target: Path) -> None:
+def _snapshot(db_path: Path, doc_root: Path, target: Path, vault_file: Path | None) -> None:
     src = sqlite3.connect(db_path)
     dst = sqlite3.connect(target / "oncoscope.sqlite3")
     try:
@@ -113,11 +135,14 @@ def _snapshot(db_path: Path, doc_root: Path, target: Path) -> None:
         shutil.copytree(doc_root, target / "documents")
     else:
         (target / "documents").mkdir()
+    if vault_file and vault_file.exists():   # wrapped keys only; without it a recovery key cannot open anything
+        shutil.copy2(vault_file, target / VAULT_FILE)
 
 
 def backup(target_dir: Path | None = None, db_path: Path | None = None, doc_root: Path | None = None) -> Path:
     source = db_path or database_path()
     docs = doc_root or (document_dir() if db_path is None else source.parent / "documents")
+    keys = vault_path() if db_path is None else source.parent / VAULT_FILE
     if not source.exists():
         raise SystemExit(f"No database at {source}")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -128,8 +153,8 @@ def backup(target_dir: Path | None = None, db_path: Path | None = None, doc_root
         n += 1
         target = parent / f"oncoscope-{stamp}-{n}"
     target.mkdir()
-    _snapshot(source, docs, target)
-    manifest = build_manifest(target / "oncoscope.sqlite3", target / "documents")
+    _snapshot(source, docs, target, keys)
+    manifest = build_manifest(target / "oncoscope.sqlite3", target / "documents", target / VAULT_FILE)
     (target / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
     problems = compare_manifests(manifest, manifest)
     if problems:
@@ -142,7 +167,7 @@ def verify_backup(backup_dir: Path) -> dict:
     if not manifest_path.exists() or not (backup_dir / "oncoscope.sqlite3").exists():
         return {"ok": False, "problems": ["backup is missing manifest.json or oncoscope.sqlite3"], "manifest": None}
     expected = json.loads(manifest_path.read_text(encoding="utf-8"))
-    actual = build_manifest(backup_dir / "oncoscope.sqlite3", backup_dir / "documents")
+    actual = build_manifest(backup_dir / "oncoscope.sqlite3", backup_dir / "documents", backup_dir / VAULT_FILE)
     problems = compare_manifests(expected, actual) + [f"documents/{p}" for p in unexpected_store_files(backup_dir / "documents")]
     return {"ok": not problems, "problems": problems, "manifest": expected}
 

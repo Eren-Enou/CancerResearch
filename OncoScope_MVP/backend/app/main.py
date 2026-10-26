@@ -20,6 +20,7 @@ from .models import (
     ExtractionAccept, ExtractionReject, MeasurementCreate, OwnerSetup, PatientCreate, SourceCreate, StatusChange, StudyCreate,
     TreatmentCreate, Unlock,
 )
+from .models import ChangePassphrase, Recover
 from .evidence import build_findings
 from .reporting import build_csv, build_export, build_report, patient_records
 from .units import exact_difference, format_number, rule_for, test_key, unit_spelling_conflict
@@ -37,7 +38,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title="OncoScope local API", version="0.4.0", lifespan=lifespan,
+    title="OncoScope local API", version="0.5.0", lifespan=lifespan,
     description="Local-only prototype. Organizes sources; does not diagnose, stage, or assess clinical response.",
 )
 # Rejects requests whose Host header is not loopback (DNS-rebinding protection for a local service).
@@ -45,7 +46,8 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost
 
 
 # The only operations reachable without a session in protected mode. Everything else needs a valid bearer token.
-PUBLIC_ROUTES = {("GET", "/api/health"), ("GET", "/api/auth/status"), ("POST", "/api/auth/setup"), ("POST", "/api/auth/unlock")}
+PUBLIC_ROUTES = {("GET", "/api/health"), ("GET", "/api/auth/status"), ("POST", "/api/auth/setup"), ("POST", "/api/auth/unlock"),
+                 ("POST", "/api/auth/recover")}
 LOOPBACK_PEERS = {"127.0.0.1", "::1", "testclient"}   # "testclient" is the in-process test transport, not a network peer
 LOCKED = {"detail": "OncoScope is locked. Unlock it to continue."}
 
@@ -68,6 +70,7 @@ async def access_control(request: Request, call_next):
         return await call_next(request)
     if foreign_origin(request):
         return JSONResponse({"detail": "Requests from other web origins are refused"}, status_code=403)
+    request.state.session = None
     if app_mode() == "demo":
         actor = DEMO_ACTOR
     elif (request.method, request.url.path) in PUBLIC_ROUTES:
@@ -78,6 +81,7 @@ async def access_control(request: Request, call_next):
         if session is None:
             return JSONResponse(LOCKED, status_code=401, headers={"WWW-Authenticate": "Bearer"})
         actor = session.actor
+        request.state.session = session
     marker = current_actor.set(actor)
     try:
         return await call_next(request)
@@ -277,10 +281,39 @@ def health():
 
 # --- Protected access ---------------------------------------------------------------------------
 
-def session_reply(token: str, owner_row: dict) -> dict:
-    # The token is returned once, in this no-store response body; the UI keeps it in memory only.
-    return {"token": token, "actor": {"id": auth.actor_of(owner_row)[0], "label": owner_row["display_name"]},
-            "idle_seconds": auth.idle_seconds(), "max_seconds": auth.max_seconds()}
+def record_events(conn: sqlite3.Connection, events: list[tuple[str, dict]]) -> None:
+    """Security events go into the same hash-chained audit log, with no case and never with any secret in them."""
+    for action, detail in events:
+        audit(conn, "local_owner", 1, action, detail)
+
+
+def open_session(conn: sqlite3.Connection, result: auth.Unlocked) -> dict:
+    """Starts the session for a setup/unlock/recovery and returns it. The reply is no-store and shown once: the token
+    is kept in UI memory only; a recovery key, when one is issued, must be shown to the owner and is never stored."""
+    row = result.owner
+    marker = current_actor.set(auth.actor_of(row))
+    try:
+        record_events(conn, result.events)
+        token = auth.start_session(row, result.opened)
+        audit(conn, "local_owner", 1, "unlock", {"vault_id": result.opened.doc["vault_id"]})
+    finally:
+        current_actor.reset(marker)
+    return {"token": token, "actor": {"id": auth.actor_of(row)[0], "label": row["display_name"]},
+            "idle_seconds": auth.idle_seconds(), "max_seconds": auth.max_seconds(),
+            "vault": {"key_id": result.opened.doc["key_id"], "recovery_confirmed": result.opened.doc["recovery_confirmed"]},
+            "recovery_key": result.recovery_key}
+
+
+def require_protected(action: str) -> None:
+    if app_mode() != "protected":
+        raise HTTPException(409, f"Demonstration mode has nothing to {action}")
+
+
+def current_session(request: Request) -> auth.Session:
+    session = getattr(request.state, "session", None)
+    if session is None:   # only reachable in demonstration mode, where there are no sessions or keys
+        raise HTTPException(409, "Demonstration mode has no key vault")
+    return session
 
 
 @app.get("/api/auth/status")
@@ -288,45 +321,58 @@ def auth_status():
     """Enough for the lock screen; nothing about cases or the owner."""
     protected = app_mode() == "protected"
     with connection() as conn:
-        configured = protected and auth.owner(conn) is not None
-    return {"mode": app_mode(), "setup_required": protected and not configured, "encrypted_at_rest": False}
+        row = auth.owner(conn) if protected else None
+    return {"mode": app_mode(), "setup_required": protected and row is None,
+            "recovery_available": bool(row and row["vault_id"]), "encrypted_at_rest": False}
 
 
 @app.post("/api/auth/setup", status_code=201)
 def auth_setup(payload: OwnerSetup):
     with connection() as conn:
-        row = auth.create_owner(conn, payload.display_name, payload.passphrase)
-        marker = current_actor.set(auth.actor_of(row))
-        try:
-            audit(conn, "local_owner", 1, "owner_setup", {"owner_uid": row["uid"], "display_name": row["display_name"],
-                                                          "verifier": "argon2id"})
-            token = auth.start_session(row)
-            audit(conn, "local_owner", 1, "unlock", {})
-        finally:
-            current_actor.reset(marker)
-    return session_reply(token, row)
+        return open_session(conn, auth.setup(conn, payload.display_name, payload.passphrase))
 
 
 @app.post("/api/auth/unlock")
 def auth_unlock(payload: Unlock):
-    if app_mode() != "protected":
-        raise HTTPException(409, "Demonstration mode has nothing to unlock")
+    require_protected("unlock")
     with connection() as conn:
-        row = auth.verify_passphrase(conn, payload.passphrase)
-        marker = current_actor.set(auth.actor_of(row))
-        try:
-            token = auth.start_session(row)
-            audit(conn, "local_owner", 1, "unlock", {})
-        finally:
-            current_actor.reset(marker)
-    return session_reply(token, row)
+        return open_session(conn, auth.unlock(conn, payload.passphrase))
+
+
+@app.post("/api/auth/recover")
+def auth_recover(payload: Recover):
+    """Recovery key + new passphrase → the same DEK, re-wrapped under the new passphrase, and a new session."""
+    require_protected("recover")
+    with connection() as conn:
+        return open_session(conn, auth.recover(conn, payload.recovery_key, payload.new_passphrase))
+
+
+@app.get("/api/vault/status")
+def vault_status(request: Request):
+    return auth.vault_status(current_session(request))
+
+
+@app.post("/api/vault/passphrase")
+def vault_change_passphrase(payload: ChangePassphrase, request: Request):
+    session = current_session(request)
+    with connection() as conn:
+        record_events(conn, auth.change_passphrase(conn, session, payload.current_passphrase, payload.new_passphrase))
+    return {"changed": True, "key_id": session.keys.doc["key_id"]}
+
+
+@app.post("/api/vault/recovery-key/confirm")
+def vault_confirm_recovery_key(request: Request):
+    session = current_session(request)
+    events = auth.confirm_recovery_key(session)
+    with connection() as conn:
+        record_events(conn, events)
+    return {"recovery_confirmed": True}
 
 
 @app.post("/api/auth/lock")
 def auth_lock(request: Request):
-    """Revokes the presented session immediately."""
-    if app_mode() != "protected":
-        raise HTTPException(409, "Demonstration mode has nothing to lock")
+    """Revokes the presented session immediately and drops its vault key from memory."""
+    require_protected("lock")
     with connection() as conn:
         audit(conn, "local_owner", 1, "lock", {})
     auth.end_session(auth.bearer_token(request.headers.get("authorization")))
