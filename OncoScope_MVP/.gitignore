@@ -1,0 +1,23 @@
+# Clinical records and scans must never be committed
+backend/data/
+**/*.sqlite3
+**/*.db
+**/*.dcm
+**/*.dicom
+*.zip
+.env
+.env.*
+!*.env.example
+# Python
+__pycache__/
+.pytest_cache/
+.venv/
+*.pyc
+# Node
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+# Playwright
+test-results/
+playwright-report/
