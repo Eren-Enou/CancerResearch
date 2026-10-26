@@ -16,7 +16,7 @@ const PYTHON = process.env.ONCOSCOPE_PYTHON ?? join(BACKEND, '.venv', process.pl
 const DB = process.env.ONCOSCOPE_E2E_DB_M25!;
 
 function py(args: string[], env: Record<string, string> = {}) {
-  return execFileSync(PYTHON, args, { cwd: BACKEND, env: { ...process.env, ONCOSCOPE_DB_PATH: DB, ...env }, encoding: 'utf-8' });
+  return execFileSync(PYTHON, args, { cwd: BACKEND, env: { ...process.env, ONCOSCOPE_MODE: 'demo', ONCOSCOPE_DB_PATH: DB, ...env }, encoding: 'utf-8' });
 }
 
 async function nav(page: Page, view: string) {

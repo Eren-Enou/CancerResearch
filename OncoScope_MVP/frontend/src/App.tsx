@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { request } from './api';
+import { downloadFile, request } from './api';
+import type { Access } from './Root';
 import { AddRecord, CreateCase } from './components/AddRecord';
 import { DocumentViewer } from './components/DocumentViewer';
 import { EvidenceView, locationText } from './components/EvidenceView';
@@ -32,7 +33,7 @@ function Metric({ label, value, sub }: { label: string; value: number; sub: stri
   return <div className="metric"><div className="metric-label">{label}</div><div className="metric-value">{value}</div><div className="muted tiny">{sub}</div></div>;
 }
 
-export default function App() {
+export default function App({ access }: { access: Access }) {
   const [view, setView] = useState<View>(() => readHash().view);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [patientId, setPatientId] = useState<number | null>(() => readHash().caseId);
@@ -136,22 +137,31 @@ export default function App() {
       <div className="row-title">{t.label}</div><div className="muted tiny">{bySource(t.source_id)} {evidenceLink(t.entity, t)}</div>
       {withTools && tools(t.entity, lookup(t.entity, t.id))}
     </div></div>;
-  const exportBase = patientId ? `/api/patients/${patientId}` : '';
+  // Downloads go through authorized fetches; links to /api would carry no session (and must not carry one in the URL).
+  const save = (path: string, filename: string) => {
+    if (!patientId) return;
+    downloadFile(`/patients/${patientId}/${path}`, `oncoscope-synthetic-${patientId}-${filename}`).catch(e => setError(e.message));
+  };
 
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">◎</div><div><strong>ONCOSCOPE</strong><span>LOCAL RESEARCH WORKSPACE</span></div></div>
       <p className="nav-label">WORKSPACE</p>
       <nav aria-label="Main navigation">{views.map((v, i) => <button className={`nav-item ${view === v ? 'active' : ''}`} aria-current={view === v ? 'page' : undefined} key={v} onClick={() => { setView(v); setAnchorDraft(null); }}><span className="nav-icon" aria-hidden="true">{icons[i]}</span>{v}{v === 'Review' && pendingReviews > 0 && <span className="nav-count" aria-hidden="true">{pendingReviews}</span>}</button>)}</nav>
-      <div className="sidebar-footer"><span className="local-dot" /> Local-only prototype<p>Phase 1 · M3.0 · v0.3.0<br />No automated interpretation</p></div>
+      <div className="sidebar-footer">
+        {access.mode === 'protected'
+          ? <div className="session-box" data-testid="session-box"><span className="tiny muted">Signed in as</span> <strong>{access.actor.label}</strong></div>
+          : <div className="session-box demo" data-testid="demo-banner"><strong>Demonstration mode</strong><span className="tiny">Fictional data only, no sign-in. Protected storage is not available here.</span></div>}
+        <span className="local-dot" /> Local-only prototype<p>Phase 1 · M3.1-A · v0.4.0<br />Not encrypted at rest · No automated interpretation</p></div>
     </aside>
     <main className="main">
       <header className="topbar"><div><div className="eyebrow">CLINICAL RECORDS / {view.toUpperCase()}</div><h1>{view === 'Overview' ? 'Patient overview' : view === 'History' ? 'Case history' : view}</h1></div>
-        <div className="top-actions"><span className="status-label">● Local data</span>
-          {patient && <><a href={`${exportBase}/report.md`} target="_blank" rel="noreferrer" className="export-link">Markdown report ↗</a>
-            <a href={`${exportBase}/export.json`} className="export-link">Export JSON</a></>}</div></header>
+        <div className="top-actions"><span className="status-label">● {access.mode === 'protected' ? 'Protected local data' : 'Demonstration data'}</span>
+          {access.mode === 'protected' && <button type="button" className="lock-button" onClick={access.onLock}>Lock now</button>}
+          {patient && <><button type="button" onClick={() => save('report.md', 'report.md')} className="export-link">Markdown report</button>
+            <button type="button" onClick={() => save('export.json', 'export.json')} className="export-link">Export JSON</button></>}</div></header>
       <div className="body-content">
-        {error && <div className="error-banner" role="alert">{error}. Start the FastAPI server at 127.0.0.1:8000.</div>}
+        {error && <div className="error-banner" role="alert">{error}.</div>}
         {loaded && !patient && <section className="panel empty"><h2>No case yet</h2><p className="muted">This local database is empty. Create a fictional case to begin entering synthetic sources and observations.</p>
           <CreateCase onCreated={id => { setPatientId(id); reload(); setView('Add record'); }} /></section>}
         {patient && <>
@@ -209,11 +219,11 @@ export default function App() {
           {view === 'Audit' && <AuditView patientId={patient.id} refresh={refresh} />}
           {view === 'Add record' && <><AddRecord patientId={patient.id} sources={sources} studies={studies} onSaved={reload} anchor={anchorDraft} />
             <section className="panel"><h2>Exports (synthetic cases only)</h2><p className="muted">Read-only. Source document bytes are not included; their SHA-256 hashes are.</p>
-              <div className="export-row"><a className="export-link" href={`${exportBase}/report.md`} target="_blank" rel="noreferrer">Markdown report</a><a className="export-link" href={`${exportBase}/export.json`}>Full JSON</a>
-                {(['sources', 'events', 'labs', 'treatments', 'studies', 'measurements', 'audit_log'] as const).map(e => <a key={e} className="export-link" href={`${exportBase}/export/${e}.csv`}>{e}.csv</a>)}</div>
+              <div className="export-row"><button type="button" className="export-link" onClick={() => save('report.md', 'report.md')}>Markdown report</button><button type="button" className="export-link" onClick={() => save('export.json', 'export.json')}>Full JSON</button>
+                {(['sources', 'events', 'labs', 'treatments', 'studies', 'measurements', 'audit_log'] as const).map(e => <button type="button" key={e} className="export-link" onClick={() => save(`export/${e}.csv`, `${e}.csv`)}>{e}.csv</button>)}</div>
               <details className="new-case"><summary>Create another fictional case</summary><CreateCase onCreated={id => { setPatientId(id); reload(); }} /></details></section></>}
         </>}
-        <footer className="footer">OncoScope 0.3.0 · Local-first prototype · Not for clinical decisions · Verify every observation against original documentation</footer>
+        <footer className="footer">OncoScope 0.4.0 · Local-first prototype · Not for clinical decisions · Verify every observation against original documentation</footer>
       </div>
     </main>
   </div>;

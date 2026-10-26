@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 // The legacy build carries polyfills (e.g. Uint8Array.toHex), so pages also render in browsers a few versions old.
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import workerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url';
+import { fetchBlob } from '../api';
 import { mapQuote, parseRegionBox, type Mapping, type TextRun } from '../pdfMapping';
 import type { TimelineEntry } from '../types';
 import { RegionSelector, type Overlay } from './RegionSelector';
@@ -9,7 +10,7 @@ import { RegionSelector, type Overlay } from './RegionSelector';
 pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
 
 type Props = {
-  url: string; expectedSha256: string; observations: TimelineEntry[]; active: string | null;
+  route: string; expectedSha256: string; observations: TimelineEntry[]; active: string | null;
   selection: { page: number | null; region: string | null } | null; onRegion: (page: number, region: string | null) => void;
 };
 type PageInfo = { num: number; width: number; height: number; runs: TextRun[] };
@@ -31,7 +32,7 @@ export function citationMappings(observations: TimelineEntry[], pages: PageInfo[
   });
 }
 
-export function PdfViewer({ url, expectedSha256, observations, active, selection, onRegion }: Props) {
+export function PdfViewer({ route, expectedSha256, observations, active, selection, onRegion }: Props) {
   const [doc, setDoc] = useState<pdfjs.PDFDocumentProxy | null>(null);
   const [pages, setPages] = useState<PageInfo[]>([]);
   const [zoom, setZoom] = useState(1);
@@ -46,7 +47,7 @@ export function PdfViewer({ url, expectedSha256, observations, active, selection
     setStatus('loading'); setPages([]); setDoc(null);
     (async () => {
       try {
-        const bytes = await (await fetch(url)).arrayBuffer();
+        const bytes = await (await fetchBlob(route)).arrayBuffer();
         // The browser re-hashes the exact bytes it is about to render; a mismatch stops rendering.
         if ((await sha256Hex(bytes)) !== expectedSha256) { if (!cancelled) setStatus('mismatch'); return; }
         task = pdfjs.getDocument({ data: new Uint8Array(bytes), enableXfa: false });
@@ -71,7 +72,7 @@ export function PdfViewer({ url, expectedSha256, observations, active, selection
       } catch (e) { if (!cancelled) { setStatus('error'); setError((e as Error).message); } }
     })();
     return () => { cancelled = true; task?.destroy(); };
-  }, [url, expectedSha256]);
+  }, [route, expectedSha256]);
 
   const mappings = citationMappings(observations, pages);
   useEffect(() => {

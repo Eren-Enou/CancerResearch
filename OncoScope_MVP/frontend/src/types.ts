@@ -24,7 +24,8 @@ export type TimelineEntry = Omit<Evidence, 'extraction_id'> & { id: number; uid:
 export type Counts = Record<Entity, number>;
 export type LabChange = { from_id: number; to_id: number; from_date: string; to_date: string; difference: number; unit: string };
 export type LabSeries = { test: string; unit: string | null; available_units: string[]; points: Lab[]; excluded: Lab[]; changes?: LabChange[]; note: string };
-export type AuditEntry = { id: number; entity_type: string; entity_id: number; patient_id: number; action: string; detail_json: string; reason: string | null; recorded_at: string; entry_hash: string };
+export type AuditEntry = { id: number; entity_type: string; entity_id: number; patient_id: number; action: string; detail_json: string; reason: string | null; recorded_at: string; entry_hash: string;
+  actor_id?: string | null; actor_label?: string | null };
 export type AuditVerification = { valid: boolean; entries_checked: number; first_invalid_id: number | null };
 export type ComparisonRow = {
   lesion_key: string; site: string; site_differs: boolean; baseline_site: string | null; followup_site: string | null;

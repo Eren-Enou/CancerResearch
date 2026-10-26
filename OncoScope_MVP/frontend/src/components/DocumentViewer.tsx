@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { post, request } from '../api';
+import { fetchBlob, openFile, post, request } from '../api';
 import { provenanceLabel } from '../records';
 import type { AnchorDraft, DocFocus, DocumentText, Source, TimelineEntry } from '../types';
 import { parseRegionBox } from '../pdfMapping';
@@ -40,6 +40,19 @@ export function segmentPage(text: string, anchors: { start: number; end: number;
   return out;
 }
 
+/** A blob: URL for an authorized document, revoked when the component unmounts (for example on lock). */
+function useObjectUrl(route: string | null): string | null {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!route) return;
+    let created: string | null = null;
+    let cancelled = false;
+    fetchBlob(route).then(blob => { if (!cancelled) { created = URL.createObjectURL(blob); setUrl(created); } }).catch(() => setUrl(null));
+    return () => { cancelled = true; if (created) URL.revokeObjectURL(created); setUrl(null); };
+  }, [route]);
+  return url;
+}
+
 export function DocumentViewer({ source, observations, focus, onTranscribe, onExtracted }: Props) {
   const [doc, setDoc] = useState<DocumentText | null>(null);
   const [error, setError] = useState('');
@@ -51,7 +64,8 @@ export function DocumentViewer({ source, observations, focus, onTranscribe, onEx
   const isPdf = source.document_media_type === 'application/pdf';
   // PDFs open on the rendered pages; following a text-layer citation opens the exact text-layer view instead.
   const [mode, setMode] = useState<'rendered' | 'text'>('rendered');
-  const url = `/api/sources/${source.id}/document`;
+  const route = `/sources/${source.id}/document`;
+  const imageUrl = useObjectUrl(isImage && source.document_sha256 ? route : null);
 
   useEffect(() => {
     setDoc(null); setError(''); setSelection(null); setMessage('');
@@ -106,7 +120,7 @@ export function DocumentViewer({ source, observations, focus, onTranscribe, onEx
   return <section className="panel doc-viewer" aria-label={`Document viewer for source #${source.id}`}>
     <div className="section-heading"><div><div className="eyebrow">SOURCE #{source.id} · {source.kind}</div><h2>{source.label}</h2>
       <p className="muted tiny">{source.document_filename} · {source.document_media_type} · SHA-256 <span className="hash-inline">{source.document_sha256}</span></p></div>
-      <div className="doc-actions"><a className="export-link" href={url} target="_blank" rel="noreferrer">Open original file ↗</a>
+      <div className="doc-actions"><button className="export-link" type="button" onClick={() => openFile(route).catch(e => setError(e.message))}>Open original file ↗</button>
         {doc?.has_text_layer && <button className="export-link" type="button" onClick={extract}>Propose CA-125 values</button>}</div></div>
     {isPdf && <div className="view-tabs" role="tablist" aria-label="Document view">
       <button type="button" role="tab" aria-selected={mode === 'rendered'} className={mode === 'rendered' ? 'active' : ''} onClick={() => setMode('rendered')}>Rendered pages</button>
@@ -120,9 +134,9 @@ export function DocumentViewer({ source, observations, focus, onTranscribe, onEx
       <div className="doc-pages">
         {isImage ? <div className="image-wrap" data-testid="image-canvas">
             <RegionSelector label="image" region={selection?.region ?? null} onChange={r => setRegion(1, r)} overlays={imageOverlays}>
-              <img src={url} alt={`Original fictional document ${source.document_filename}`} draggable={false} />
+              {imageUrl && <img src={imageUrl} alt={`Original fictional document ${source.document_filename}`} draggable={false} />}
             </RegionSelector></div>
-          : isPdf && mode === 'rendered' ? <PdfViewer url={url} expectedSha256={source.document_sha256} observations={observations} active={active}
+          : isPdf && mode === 'rendered' ? <PdfViewer route={route} expectedSha256={source.document_sha256} observations={observations} active={active}
               selection={selection?.region ? { page: selection.page, region: selection.region } : null} onRegion={setRegion} />
           : doc && (doc.has_text_layer ? doc.pages.map(p => <div key={p.page} className="doc-page"><div className="page-label">Page {p.page}</div>
             <pre data-testid={`doc-page-${p.page}`} onMouseUp={e => captureText(p.page, e.currentTarget)}>{segmentPage(p.text, anchoredOn(p.page)).map((seg, i) => seg.keys.length

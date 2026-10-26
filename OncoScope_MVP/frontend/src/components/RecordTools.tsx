@@ -19,6 +19,12 @@ function show(value: unknown) {
   return value === null || value === undefined || value === '' ? '∅' : String(value);
 }
 
+/** Who made an audit entry. Entries written before sign-in existed (schema v4) stay "unknown"; none is guessed. */
+export function actorText(entry: AuditEntry): string {
+  if (!entry.actor_id) return 'by unknown (recorded before sign-in existed)';
+  return entry.actor_id === 'demo' ? 'by demonstration mode (no sign-in)' : `by ${entry.actor_label ?? entry.actor_id}`;
+}
+
 /** Renders one audit entry as field-level before → after lines. */
 export function AuditDetail({ entry }: { entry: AuditEntry }) {
   const detail = JSON.parse(entry.detail_json) as Record<string, unknown>;
@@ -86,7 +92,7 @@ export function RecordTools({ entity, record, sources, studies, onSaved }: Props
     </form>}
     {mode === 'history' && <div className="history" aria-label={`History of ${label}`}>
       {error && <p className="error" role="alert">{error}</p>}
-      {history.map(h => <div key={h.id} className="history-entry"><span className="date-label">{h.recorded_at} · {h.action}</span><AuditDetail entry={h} /></div>)}
+      {history.map(h => <div key={h.id} className="history-entry"><span className="date-label">{h.recorded_at} · {h.action} · {actorText(h)}</span><AuditDetail entry={h} /></div>)}
     </div>}
   </div>;
 }
