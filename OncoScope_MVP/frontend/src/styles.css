@@ -47,3 +47,14 @@ tr.uncertain td{background:#2a2316}.secondary{background:#223149;color:#e7ecf5;b
 .anchor-preview{display:grid;gap:4px}.date-group{border-top:1px solid #26354a;padding:10px 0}.date-group ul{margin:6px 0 0;padding-left:18px;font-size:13px}
 .evidence-link{font-size:11px}
 @media(max-width:1100px){.documents-layout,.doc-body{grid-template-columns:1fr}}
+/* M2.6 additions */
+.view-tabs{display:flex;gap:4px;margin:4px 0 8px}.view-tabs button{background:#16253a;border:1px solid #2b3d52;color:#cfd9e6;border-radius:7px;padding:7px 12px;font-size:12px;font-weight:700}.view-tabs button.active{background:#173339;border-color:#67d0bf;color:#e7ecf5}
+.pdf-toolbar{position:sticky;top:0;z-index:2;display:flex;flex-wrap:wrap;gap:8px;align-items:center;background:#121f31;padding:8px 0;border-bottom:1px solid #26354a}
+.pdf-toolbar .secondary{padding:5px 11px}.page-input{display:flex;gap:6px;align-items:center;font-size:12px;color:#a9b7ca}.page-input input{width:56px}.toolbar-gap{flex:1}
+.mapping-list{list-style:none;padding:0;margin:10px 0;display:grid;gap:4px;font-size:12px}.mapping-list li{padding:5px 8px;border-radius:6px;background:#16253a}.mapping-list li.focus{outline:1px solid #67d0bf}
+.mapping-list li[data-status="not_found"],.mapping-list li[data-status="ambiguous"],.mapping-list li[data-status="no_text"]{border-left:3px solid #d9b44a}
+.pdf-pages{display:grid;gap:16px;max-height:80vh;overflow:auto;padding-right:4px}.pdf-page canvas{display:block;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.4)}
+.region-selector{display:grid;gap:6px}.region-canvas{position:relative;display:inline-block;width:max-content;max-width:100%;cursor:crosshair;user-select:none}
+.region.drawn{border-color:#d9b44a}.region.mapped{border:2px solid #4aa3d9;background:rgba(74,163,217,.18)}.region.mapped.focus,.region.drawn.focus{border-color:#128a78;background:rgba(127,227,210,.35)}
+.region.selectable{cursor:move;outline:none}.region.selectable:focus{box-shadow:0 0 0 3px #67d0bf}
+.region-keyboard{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px}.region-inputs{display:flex;gap:6px}.region-inputs label{display:flex;gap:3px;align-items:center;color:#a9b7ca}.region-inputs input{width:62px}

@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { post, request } from '../api';
 import { provenanceLabel } from '../records';
 import type { AnchorDraft, DocFocus, DocumentText, Source, TimelineEntry } from '../types';
+import { parseRegionBox } from '../pdfMapping';
+import { PdfViewer } from './PdfViewer';
+import { RegionSelector, type Overlay } from './RegionSelector';
 
 type Props = {
   source: Source; observations: TimelineEntry[]; focus: DocFocus | null;
@@ -43,9 +46,11 @@ export function DocumentViewer({ source, observations, focus, onTranscribe, onEx
   const [message, setMessage] = useState('');
   const [selection, setSelection] = useState<Selection | null>(null);
   const [active, setActive] = useState<string | null>(null);
-  const [drag, setDrag] = useState<{ x: number; y: number; x2: number; y2: number } | null>(null);
   const focusRef = useRef<HTMLElement | null>(null);
   const isImage = source.document_media_type?.startsWith('image/') ?? false;
+  const isPdf = source.document_media_type === 'application/pdf';
+  // PDFs open on the rendered pages; following a text-layer citation opens the exact text-layer view instead.
+  const [mode, setMode] = useState<'rendered' | 'text'>('rendered');
   const url = `/api/sources/${source.id}/document`;
 
   useEffect(() => {
@@ -55,7 +60,11 @@ export function DocumentViewer({ source, observations, focus, onTranscribe, onEx
   }, [source.id, source.document_sha256, isImage]);
 
   const keyOf = (o: { entity: string; id: number }) => `${o.entity}-${o.id}`;
-  useEffect(() => { setActive(focus?.recordKey ?? null); }, [focus]);
+  useEffect(() => {
+    setActive(focus?.recordKey ?? null);
+    const target = observations.find(o => keyOf(o) === focus?.recordKey);
+    setMode(target && target.anchor_quote !== null ? 'text' : 'rendered');
+  }, [focus]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { focusRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' }); }, [active, doc]);
 
   function captureText(page: number, container: HTMLElement) {
@@ -70,20 +79,12 @@ export function DocumentViewer({ source, observations, focus, onTranscribe, onEx
     if (end > start) setSelection({ page, start, end, quote: container.textContent!.slice(start, end), region: null });
   }
 
-  function pct(e: MouseEvent<HTMLDivElement>) {
-    const box = e.currentTarget.getBoundingClientRect();
-    return { x: Math.min(100, Math.max(0, (e.clientX - box.left) / box.width * 100)), y: Math.min(100, Math.max(0, (e.clientY - box.top) / box.height * 100)) };
-  }
-  function finishDrag() {
-    if (!drag) return;
-    const x = Math.min(drag.x, drag.x2), y = Math.min(drag.y, drag.y2), w = Math.abs(drag.x2 - drag.x), h = Math.abs(drag.y2 - drag.y);
-    setDrag(null);
-    if (w < 1 || h < 1) return;
-    const r = (n: number) => Math.round(n * 10) / 10;
-    const [rx, ry] = [r(x), r(y)];
-    const region = `${rx},${ry},${Math.min(r(w), r(100 - rx))},${Math.min(r(h), r(100 - ry))}`;
-    setSelection({ page: 1, start: null, end: null, quote: null, region });
-  }
+  const setRegion = (page: number, region: string | null) =>
+    setSelection(region ? { page, start: null, end: null, quote: null, region } : null);
+  const imageOverlays: Overlay[] = observations.flatMap(o => {
+    const box = parseRegionBox(o.anchor_region);
+    return box ? [{ key: keyOf(o), box, kind: 'drawn' as const, focus: active === keyOf(o), title: `${o.kind} #${o.id}: ${o.label}` }] : [];
+  });
 
   async function extract() {
     setError(''); setMessage('');
@@ -107,20 +108,22 @@ export function DocumentViewer({ source, observations, focus, onTranscribe, onEx
       <p className="muted tiny">{source.document_filename} · {source.document_media_type} · SHA-256 <span className="hash-inline">{source.document_sha256}</span></p></div>
       <div className="doc-actions"><a className="export-link" href={url} target="_blank" rel="noreferrer">Open original file ↗</a>
         {doc?.has_text_layer && <button className="export-link" type="button" onClick={extract}>Propose CA-125 values</button>}</div></div>
-    {doc && <p className="caption">Showing the deterministic text layer ({doc.extractor}). The original file is unchanged; open it to compare layout. Highlighted passages are cited by records.</p>}
-    {isImage && <p className="caption">Drag on the image to mark a region, then transcribe what it shows. Images have no text layer and are never parsed.</p>}
+    {isPdf && <div className="view-tabs" role="tablist" aria-label="Document view">
+      <button type="button" role="tab" aria-selected={mode === 'rendered'} className={mode === 'rendered' ? 'active' : ''} onClick={() => setMode('rendered')}>Rendered pages</button>
+      <button type="button" role="tab" aria-selected={mode === 'text'} className={mode === 'text' ? 'active' : ''} onClick={() => setMode('text')}>Text layer</button></div>}
+    {doc && (!isPdf || mode === 'text') && <p className="caption">Showing the deterministic text layer ({doc.extractor}). Character positions here are what citations and the report refer to; they are not page coordinates. Highlighted passages are cited by records.</p>}
+    {isPdf && mode === 'rendered' && <p className="caption">Showing the original pages rendered by pdf.js. Drag (or use the keyboard) to mark an evidence region on a page. Text-layer citations are highlighted here only where they match exactly one place.</p>}
+    {isImage && <p className="caption">Drag on the image, or use the keyboard, to mark a region, then transcribe what it shows. Images have no text layer and are never parsed.</p>}
     {error && <p className="error" role="alert">{error}</p>}
     {message && <p className="success" role="status">{message}</p>}
     <div className="doc-body">
       <div className="doc-pages">
-        {isImage ? <div className="image-wrap" data-testid="image-canvas" onMouseDown={e => { e.preventDefault(); const p = pct(e); setDrag({ x: p.x, y: p.y, x2: p.x, y2: p.y }); }}
-            onMouseMove={e => { if (drag) { const p = pct(e); setDrag(d => d && { ...d, x2: p.x, y2: p.y }); } }} onMouseUp={finishDrag} onMouseLeave={finishDrag}>
-            <img src={url} alt={`Original fictional document ${source.document_filename}`} draggable={false} />
-            {observations.filter(o => parseRegion(o.anchor_region)).map(o => { const r = parseRegion(o.anchor_region)!; const key = keyOf(o);
-              return <div key={key} ref={active === key ? el => { focusRef.current = el; } : undefined} className={`region ${active === key ? 'focus' : ''}`} style={{ left: `${r.x}%`, top: `${r.y}%`, width: `${r.w}%`, height: `${r.h}%` }} title={`${o.kind} #${o.id}: ${o.label}`} />; })}
-            {(drag || selection?.region) && (() => { const r = drag ? { x: Math.min(drag.x, drag.x2), y: Math.min(drag.y, drag.y2), w: Math.abs(drag.x2 - drag.x), h: Math.abs(drag.y2 - drag.y) } : parseRegion(selection!.region)!;
-              return <div className="region pending" style={{ left: `${r.x}%`, top: `${r.y}%`, width: `${r.w}%`, height: `${r.h}%` }} />; })()}
-          </div>
+        {isImage ? <div className="image-wrap" data-testid="image-canvas">
+            <RegionSelector label="image" region={selection?.region ?? null} onChange={r => setRegion(1, r)} overlays={imageOverlays}>
+              <img src={url} alt={`Original fictional document ${source.document_filename}`} draggable={false} />
+            </RegionSelector></div>
+          : isPdf && mode === 'rendered' ? <PdfViewer url={url} expectedSha256={source.document_sha256} observations={observations} active={active}
+              selection={selection?.region ? { page: selection.page, region: selection.region } : null} onRegion={setRegion} />
           : doc && (doc.has_text_layer ? doc.pages.map(p => <div key={p.page} className="doc-page"><div className="page-label">Page {p.page}</div>
             <pre data-testid={`doc-page-${p.page}`} onMouseUp={e => captureText(p.page, e.currentTarget)}>{segmentPage(p.text, anchoredOn(p.page)).map((seg, i) => seg.keys.length
               ? <mark key={i} ref={seg.keys.includes(active ?? '') ? el => { focusRef.current = el; } : undefined} className={seg.keys.includes(active ?? '') ? 'focus' : ''} title={seg.keys.map(k => { const o = labelFor(k); return o ? `${o.kind} #${o.id}: ${o.label}` : k; }).join('\n')} data-anchor={seg.keys.join(' ')}>{seg.text}</mark>
@@ -130,11 +133,11 @@ export function DocumentViewer({ source, observations, focus, onTranscribe, onEx
       <aside className="doc-side">
         <h3>Transcribe from this document</h3>
         {selection ? <div className="selection-box" data-testid="selection">
-          <div className="tiny muted">{selection.quote !== null ? `Page ${selection.page}, characters ${selection.start}–${selection.end}` : `Region ${selection.region} (x,y,w,h %)`}</div>
+          <div className="tiny muted">{selection.quote !== null ? `Text layer: page ${selection.page}, characters ${selection.start}–${selection.end}` : `Rendered page ${selection.page}: region ${selection.region} (x,y,w,h %)`}</div>
           {selection.quote !== null && <blockquote>{selection.quote}</blockquote>}
           <div className="transcribe-row">{transcribeKinds.map(k => <button key={k} type="button" className="text-button" onClick={() => transcribe(k)}>As {k.toLowerCase()}</button>)}</div>
           <button type="button" className="text-button" onClick={() => setSelection(null)}>Clear selection</button>
-        </div> : <p className="muted tiny">{isImage ? 'Drag a region on the image.' : 'Select the exact passage in the text with the mouse.'} The record will cite that location.</p>}
+        </div> : <p className="muted tiny">{isImage || (isPdf && mode === 'rendered') ? 'Drag a region on the page, or press “Mark a region with the keyboard”.' : 'Select the exact passage in the text with the mouse.'} The record will cite that location.</p>}
         <h3>Observations citing this source ({observations.length})</h3>
         <ul className="obs-list">{observations.map(o => { const key = keyOf(o); return <li key={key} className={active === key ? 'focus' : ''}>
           <button type="button" className="text-button" onClick={() => setActive(key)} disabled={o.anchor_start === null && !o.anchor_region}>{o.kind} #{o.id}</button> {o.label}
