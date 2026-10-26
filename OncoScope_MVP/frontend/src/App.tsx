@@ -3,6 +3,8 @@ import { request } from './api';
 import { AddRecord, CreateCase } from './components/AddRecord';
 import { DocumentViewer } from './components/DocumentViewer';
 import { EvidenceView, locationText } from './components/EvidenceView';
+import { HistoryView } from './components/HistoryView';
+import { ImportDocument } from './components/ImportDocument';
 import { ReviewQueue } from './components/ReviewQueue';
 import { LabChart } from './components/LabChart';
 import { AuditView, SourceReference, SourcesView } from './components/Panels';
@@ -10,9 +12,17 @@ import { RecordTools, StatusBadge } from './components/RecordTools';
 import { formatDifference, formatNumber, provenanceLabel } from './records';
 import type { AnchorDraft, DocFocus, Evidence, Extraction, AnyRecord, Comparison, Counts, Entity, Event, Lab, LabSeries, Measurement, Patient, Source, Study, TimelineEntry, Treatment } from './types';
 
-type View = 'Overview' | 'Timeline' | 'Laboratory' | 'Imaging' | 'Documents' | 'Review' | 'Evidence' | 'Sources' | 'Audit' | 'Add record';
-const views: View[] = ['Overview', 'Timeline', 'Laboratory', 'Imaging', 'Documents', 'Review', 'Evidence', 'Sources', 'Audit', 'Add record'];
-const icons = ['◫', '≡', '⌁', '▧', '▯', '✓', '⚑', '▤', '⎘', '+'];
+type View = 'Overview' | 'History' | 'Timeline' | 'Laboratory' | 'Imaging' | 'Documents' | 'Review' | 'Evidence' | 'Sources' | 'Audit' | 'Add record';
+const views: View[] = ['Overview', 'History', 'Timeline', 'Laboratory', 'Imaging', 'Documents', 'Review', 'Evidence', 'Sources', 'Audit', 'Add record'];
+const icons = ['◫', '◷', '≡', '⌁', '▧', '▯', '✓', '⚑', '▤', '⎘', '+'];
+
+/** The selected case and view live in the URL hash (e.g. #case=3&view=History) so a reload keeps the user's place. */
+function readHash(): { view: View; caseId: number | null } {
+  const params = new URLSearchParams(window.location.hash.slice(1));
+  const view = views.find(v => v === params.get('view')) ?? 'Overview';
+  const caseId = Number(params.get('case'));
+  return { view, caseId: Number.isInteger(caseId) && caseId > 0 ? caseId : null };
+}
 
 function ProvenanceBadge({ record }: { record: Pick<Evidence, 'provenance'> }) {
   return <span className={`badge prov-${record.provenance}`}>{provenanceLabel[record.provenance]}</span>;
@@ -23,9 +33,9 @@ function Metric({ label, value, sub }: { label: string; value: number; sub: stri
 }
 
 export default function App() {
-  const [view, setView] = useState<View>('Overview');
+  const [view, setView] = useState<View>(() => readHash().view);
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [patientId, setPatientId] = useState<number | null>(null);
+  const [patientId, setPatientId] = useState<number | null>(() => readHash().caseId);
   const [sources, setSources] = useState<Source[]>([]);
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [events, setEvents] = useState<Event[]>([]);
@@ -46,6 +56,15 @@ export default function App() {
   const [anchorDraft, setAnchorDraft] = useState<AnchorDraft | null>(null);
   const [pendingReviews, setPendingReviews] = useState(0);
   const reload = () => setRefresh(x => x + 1);
+  useEffect(() => {
+    const onHash = () => { const h = readHash(); setView(h.view); if (h.caseId) setPatientId(h.caseId); };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+  useEffect(() => {
+    const hash = `#case=${patientId ?? ''}&view=${encodeURIComponent(view)}`;
+    if (window.location.hash !== hash) window.history.replaceState(null, '', hash);
+  }, [patientId, view]);
   const patient = patients.find(p => p.id === patientId);
   const bySource = (id: number) => <SourceReference id={id} sources={sources} />;
 
@@ -124,10 +143,10 @@ export default function App() {
       <div className="brand"><div className="brand-mark">◎</div><div><strong>ONCOSCOPE</strong><span>LOCAL RESEARCH WORKSPACE</span></div></div>
       <p className="nav-label">WORKSPACE</p>
       <nav aria-label="Main navigation">{views.map((v, i) => <button className={`nav-item ${view === v ? 'active' : ''}`} aria-current={view === v ? 'page' : undefined} key={v} onClick={() => { setView(v); setAnchorDraft(null); }}><span className="nav-icon" aria-hidden="true">{icons[i]}</span>{v}{v === 'Review' && pendingReviews > 0 && <span className="nav-count" aria-hidden="true">{pendingReviews}</span>}</button>)}</nav>
-      <div className="sidebar-footer"><span className="local-dot" /> Local-only prototype<p>Phase 1 · M2.5 · v0.2.5<br />No automated interpretation</p></div>
+      <div className="sidebar-footer"><span className="local-dot" /> Local-only prototype<p>Phase 1 · M2.6 · v0.2.6<br />No automated interpretation</p></div>
     </aside>
     <main className="main">
-      <header className="topbar"><div><div className="eyebrow">CLINICAL RECORDS / {view.toUpperCase()}</div><h1>{view === 'Overview' ? 'Patient overview' : view}</h1></div>
+      <header className="topbar"><div><div className="eyebrow">CLINICAL RECORDS / {view.toUpperCase()}</div><h1>{view === 'Overview' ? 'Patient overview' : view === 'History' ? 'Case history' : view}</h1></div>
         <div className="top-actions"><span className="status-label">● Local data</span>
           {patient && <><a href={`${exportBase}/report.md`} target="_blank" rel="noreferrer" className="export-link">Markdown report ↗</a>
             <a href={`${exportBase}/export.json`} className="export-link">Export JSON</a></>}</div></header>
@@ -165,6 +184,7 @@ export default function App() {
           </>}
           {view === 'Documents' && <div className="documents-layout">
             <nav className="panel doc-list" aria-label="Documents"><h2>Documents</h2>
+              <ImportDocument patientId={patient.id} sources={sources} onImported={id => { setDocFocus({ sourceId: id }); reload(); }} />
               {docSources.length ? docSources.map(s => <button key={s.id} type="button" className={`doc-item ${viewerSource?.id === s.id ? 'active' : ''}`} onClick={() => setDocFocus({ sourceId: s.id })}>
                 <strong>#{s.id} · {s.label}</strong><span className="tiny muted">{s.document_filename} · {timeline.filter(t => t.source_id === s.id).length} record(s)</span></button>)
                 : <p className="muted">No documents attached yet. Attach fictional files in Sources.</p>}</nav>
@@ -172,6 +192,8 @@ export default function App() {
               focus={docFocus?.sourceId === viewerSource.id ? docFocus : null}
               onTranscribe={d => { setAnchorDraft(d); setView('Add record'); }} onExtracted={() => reload()} />}
           </div>}
+          {view === 'History' && <HistoryView patientId={patient.id} refresh={refresh} timeline={timeline} series={series} treatments={treatments}
+            sources={sources} onOpenDocument={openDocument} onReview={() => setView('Review')} />}
           {view === 'Review' && <ReviewQueue patientId={patient.id} sources={sources} refresh={refresh} onDecided={reload} onOpenDocument={openDocument} />}
           {view === 'Evidence' && <EvidenceView patientId={patient.id} refresh={refresh} timeline={timeline} sources={sources} series={series} onOpenDocument={openDocument} />}
           {view === 'Sources' && <SourcesView sources={sources} studies={studies} onSaved={reload} citations={citations} />}
@@ -182,7 +204,7 @@ export default function App() {
                 {(['sources', 'events', 'labs', 'treatments', 'studies', 'measurements', 'audit_log'] as const).map(e => <a key={e} className="export-link" href={`${exportBase}/export/${e}.csv`}>{e}.csv</a>)}</div>
               <details className="new-case"><summary>Create another fictional case</summary><CreateCase onCreated={id => { setPatientId(id); reload(); }} /></details></section></>}
         </>}
-        <footer className="footer">OncoScope 0.2.5 · Local-first prototype · Not for clinical decisions · Verify every observation against original documentation</footer>
+        <footer className="footer">OncoScope 0.2.6 · Local-first prototype · Not for clinical decisions · Verify every observation against original documentation</footer>
       </div>
     </main>
   </div>;

@@ -58,3 +58,8 @@ tr.uncertain td{background:#2a2316}.secondary{background:#223149;color:#e7ecf5;b
 .region.drawn{border-color:#d9b44a}.region.mapped{border:2px solid #4aa3d9;background:rgba(74,163,217,.18)}.region.mapped.focus,.region.drawn.focus{border-color:#128a78;background:rgba(127,227,210,.35)}
 .region.selectable{cursor:move;outline:none}.region.selectable:focus{box-shadow:0 0 0 3px #67d0bf}
 .region-keyboard{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:12px}.region-inputs{display:flex;gap:6px}.region-inputs label{display:flex;gap:3px;align-items:center;color:#a9b7ca}.region-inputs input{width:62px}
+.date-strip{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}.date-chip{display:grid;gap:2px;text-align:left;background:#16253a;border:1px solid #2b3d52;border-radius:8px;padding:8px 10px;color:inherit;font-size:12px}
+.date-chip.active{border-color:#67d0bf;background:#173339}.chip-flag{font-size:10px;font-weight:800;border-radius:8px;padding:1px 6px;width:max-content}.chip-flag.conflict{background:#4a2020;color:#ffb4ac}.chip-flag.unreviewed{background:#3a3115;color:#f1d29a}
+.day-list{list-style:none;padding:0;display:grid;gap:10px}.day-list li{border-left:3px solid #2b3d52;padding-left:10px}
+.sr-table{margin-top:10px;font-size:12px}.sr-table caption{text-align:left;color:#8ea2bb;font-size:11px;margin-bottom:4px}
+.import-form{display:grid;gap:8px;padding:10px;border:1px dashed #405169;border-radius:8px;margin-bottom:6px}.import-form h3{margin:0;font-size:13px}.import-form label{display:grid;gap:4px;font-size:11px;color:#a9b7ca}

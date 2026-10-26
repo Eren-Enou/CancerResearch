@@ -35,8 +35,19 @@ export function patch<T>(route: string, data: Record<string, unknown>): Promise<
   return request<T>(route, { method: 'PATCH', body: JSON.stringify(data) });
 }
 
+/** File bytes; falls back to FileReader where Blob.arrayBuffer is unavailable (older engines, jsdom). */
+export function readBytes(file: Blob): Promise<ArrayBuffer> {
+  if (typeof file.arrayBuffer === 'function') return file.arrayBuffer();
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsArrayBuffer(file);
+  });
+}
+
 export async function uploadDocument<T>(sourceId: number, file: File): Promise<T> {
   return request<T>(`/sources/${sourceId}/document?filename=${encodeURIComponent(file.name)}`, {
-    method: 'PUT', body: await file.arrayBuffer(), headers: { 'Content-Type': 'application/octet-stream' },
+    method: 'PUT', body: await readBytes(file), headers: { 'Content-Type': 'application/octet-stream' },
   });
 }
