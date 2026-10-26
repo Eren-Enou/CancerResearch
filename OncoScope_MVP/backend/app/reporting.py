@@ -7,6 +7,7 @@ import json
 import sqlite3
 
 from .db import RECORD_TABLES, SCHEMA_VERSION, now_utc, verify_audit_chain
+from .evidence import build_findings
 from .units import format_number
 
 EXPORT_FORMAT = "oncoscope-synthetic-export"
@@ -37,13 +38,30 @@ def build_report(conn: sqlite3.Connection, patient: dict) -> str:
         src = sources.get(record["source_id"])
         source = f"source #{src['id']}: {src['label']}" if src else f"source #{record['source_id']}: UNAVAILABLE"
         revision = f"; corrected, revision {record['revision']}" if record["revision"] > 1 else ""
-        return f"[{entity} #{record['id']}{revision}; {record['verification_status']}] [{source}]"
+        return f"[{entity} #{record['id']}{revision}; {record['verification_status']}] [{source}] {evidence(record, src)}"
+
+    def evidence(record: dict, src: dict | None) -> str:
+        provenance = record["provenance"].replace("_", " ")
+        if record["provenance"] == "user_observation":
+            return f"[{provenance}; not from a document]"
+        if not src or not src["document_sha256"]:
+            return f"[{provenance}; no document on file]"
+        doc = f"file `{src['document_filename']}` sha256 {src['document_sha256'][:12]}"
+        if record["anchor_quote"] is not None:
+            location = f"page {record['anchor_page']}, chars {record['anchor_start']}-{record['anchor_end']}: {json.dumps(record['anchor_quote'], ensure_ascii=False)}"
+        elif record["anchor_region"] is not None:
+            location = f"page {record['anchor_page'] or 1}, region {record['anchor_region']} (x,y,w,h %)"
+        else:
+            location = "location in document not recorded"
+        return f"[{provenance}; {doc}; {location}]"
 
     lines = [f"# OncoScope record: {patient['label']}", "",
              f"Generated: {now_utc()} (UTC) | Synthetic data: {'YES' if patient['is_synthetic'] else 'NO'} | Schema v{SCHEMA_VERSION}", "",
              "> Descriptive record only. Not a medical interpretation, response assessment, or treatment recommendation.",
-             "> Each line cites `[record type #id; verification state]` and `[source #id: label]`. Corrected values show",
-             "> their current revision; the original values are in the audit log.", "",
+             "> Each line cites `[record type #id; verification state]`, `[source #id: label]` and its evidence: provenance,",
+             "> the attached file with the first 12 hex digits of its SHA-256, and the page plus character range (of the extracted",
+             "> text layer) or region holding the quoted passage. Corrected values show their current revision; original values",
+             "> are in the audit log. 'reviewed'/'verified' describe transcription checks only, not clinical conclusions.", "",
              "## Clinical events", ""]
     lines += [f"- {r['date']} — {r['title']} ({r['kind']}) {trace(r, 'event')}" for r in records["events"]] or ["- None recorded"]
     lines += ["", "## Treatment administration records", ""]
@@ -76,6 +94,12 @@ def build_report(conn: sqlite3.Connection, patient: dict) -> str:
                   f"{document}; cited by {cited.get(s['id'], 0)} record(s); revision {s['revision']}, {s['verification_status']}"]
     if not records["sources"]:
         lines += ["- None registered"]
+    lines += ["", "## Documentation findings (not resolved by the application)", ""]
+    findings = build_findings(conn, patient["id"])
+    lines += [f"- [{f['severity']}] {f['message']}" for f in findings] or ["- None"]
+    pending = conn.execute("SELECT count(*) FROM extractions WHERE patient_id=? AND status='pending'", (patient["id"],)).fetchone()[0]
+    rejected = conn.execute("SELECT count(*) FROM extractions WHERE patient_id=? AND status='rejected'", (patient["id"],)).fetchone()[0]
+    lines += ["", f"Extraction proposals not included above: {pending} pending review, {rejected} rejected."]
     chain = verify_audit_chain(conn)
     lines += ["", "## Audit", "",
               f"- Audit entries for this record: {conn.execute('SELECT count(*) FROM audit_log WHERE patient_id=?', (patient['id'],)).fetchone()[0]}",
@@ -92,7 +116,10 @@ def build_export(conn: sqlite3.Connection, patient: dict) -> dict:
     return {
         "format": EXPORT_FORMAT, "schema_version": SCHEMA_VERSION, "generated_at": now_utc(),
         "notice": "Synthetic demonstration data. Descriptive record only; no clinical interpretation.",
-        "patient": patient, **records, "audit_log": audit_rows, "audit_chain": verify_audit_chain(conn),
+        "patient": patient, **records,
+        "extractions": _rows(conn, "SELECT * FROM extractions WHERE patient_id=? ORDER BY id", (patient["id"],)),
+        "findings": build_findings(conn, patient["id"]),
+        "audit_log": audit_rows, "audit_chain": verify_audit_chain(conn),
         "documents_included": False,
     }
 

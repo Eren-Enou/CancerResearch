@@ -19,6 +19,7 @@ from .models import (
     ExtractionAccept, ExtractionReject, MeasurementCreate, PatientCreate, SourceCreate, StatusChange, StudyCreate,
     TreatmentCreate,
 )
+from .evidence import build_findings
 from .reporting import build_csv, build_export, build_report, patient_records
 from .units import exact_difference, format_number, rule_for, test_key, unit_spelling_conflict
 
@@ -272,9 +273,14 @@ def lab_series(patient_id: int, test: str = Query(min_length=1), unit: str | Non
     rule = rule_for(test)
     if unit is None:
         unit = rule.accepted_units[0] if rule else (matching[-1]["unit"] if matching else None)
+    points = [r for r in matching if r["unit"] == unit]
+    # Arithmetic between consecutive documented values in the same unit; no trend or response is inferred.
+    changes = [{"from_id": a["id"], "to_id": b["id"], "from_date": a["date"], "to_date": b["date"],
+                "difference": exact_difference(a["value"], b["value"]), "unit": unit}
+               for a, b in zip(points, points[1:])]
     return {
         "test": rule.display if rule else test, "unit": unit, "available_units": units_seen,
-        "points": [r for r in matching if r["unit"] == unit],
+        "points": points, "changes": changes,
         "excluded": [r for r in matching if r["unit"] != unit],
         "note": "Values are plotted exactly as entered. Results in other units are excluded, not converted.",
     }
@@ -620,6 +626,14 @@ def audit_events(patient_id: int):
     with connection() as conn:
         ensure_patient(conn, patient_id)
         return rows(conn, "SELECT * FROM audit_log WHERE patient_id=? ORDER BY id DESC", (patient_id,))
+
+
+@app.get("/api/patients/{patient_id}/evidence")
+def evidence_findings(patient_id: int):
+    """Conflicts, possible duplicates, date mismatches and missing support. Reported, never resolved."""
+    with connection() as conn:
+        ensure_patient(conn, patient_id)
+        return build_findings(conn, patient_id)
 
 
 @app.get("/api/audit/verify")
