@@ -4,8 +4,9 @@ import { changedFields, formatDifference, formatNumber, toDraft } from './record
 import type { Lab, Measurement } from './types';
 
 const meta = { uid: 'u', revision: 1, verification_status: 'entered' as const, entered_at: '2026-09-01T00:00:00Z', updated_at: null };
-const lab: Lab = { id: 1, date: '2026-09-01', test: 'CA-125', value: 87.5, unit: 'U/mL', source_id: 2, ...meta };
-const measurement: Measurement = { id: 4, study_id: 1, lesion_key: 'demo-L1', site: 'Fictional', long_axis_mm: 41.3, short_axis_mm: 20, notes: '', source_id: 3, ...meta };
+const evidence = { provenance: 'transcribed' as const, anchor_page: null, anchor_quote: null, anchor_start: null, anchor_end: null, anchor_region: null };
+const lab: Lab = { id: 1, date: '2026-09-01', test: 'CA-125', value: 87.5, unit: 'U/mL', source_id: 2, ...meta, ...evidence };
+const measurement: Measurement = { id: 4, study_id: 1, lesion_key: 'demo-L1', site: 'Fictional', long_axis_mm: 41.3, short_axis_mm: 20, notes: '', source_id: 3, ...meta, ...evidence };
 
 describe('changedFields', () => {
   it('sends nothing when the draft is unchanged', () => {

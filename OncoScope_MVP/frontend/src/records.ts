@@ -17,6 +17,16 @@ export const entityLabel: Record<Entity, string> = {
 };
 
 const source: FieldSpec = { name: 'source_id', label: 'Original source', type: 'source' };
+export const provenanceLabel: Record<string, string> = {
+  transcribed: 'transcribed from document', extracted: 'extracted + reviewed', user_observation: 'user observation',
+};
+/** Evidence fields shared by every observation. Offsets are re-resolved by the server whenever the quote changes. */
+const evidence: FieldSpec[] = [
+  { name: 'provenance', label: 'Provenance', type: 'select', options: ['transcribed', 'user_observation', 'extracted'] },
+  { name: 'anchor_page', label: 'Document page', type: 'number', optional: true },
+  { name: 'anchor_quote', label: 'Quoted passage (exact text)', type: 'textarea', optional: true },
+  { name: 'anchor_region', label: 'Image/page region x,y,w,h (%)', optional: true },
+];
 export const editableFields: Record<Entity, FieldSpec[]> = {
   sources: [
     { name: 'label', label: 'Source label' }, { name: 'kind', label: 'Document type', type: 'select', options: sourceTypes },
@@ -25,29 +35,29 @@ export const editableFields: Record<Entity, FieldSpec[]> = {
   ],
   events: [
     { name: 'date', label: 'Date', type: 'date' }, { name: 'kind', label: 'Type', type: 'select', options: eventTypes },
-    { name: 'title', label: 'Title' }, { name: 'detail', label: 'Details', type: 'textarea', optional: true }, source,
+    { name: 'title', label: 'Title' }, { name: 'detail', label: 'Details', type: 'textarea', optional: true }, source, ...evidence,
   ],
   labs: [
     { name: 'date', label: 'Date', type: 'date' }, { name: 'test', label: 'Test' },
-    { name: 'value', label: 'Value', type: 'number' }, { name: 'unit', label: 'Unit (as written in source)' }, source,
+    { name: 'value', label: 'Value', type: 'number' }, { name: 'unit', label: 'Unit (as written in source)' }, source, ...evidence,
   ],
   treatments: [
     { name: 'date', label: 'Date', type: 'date' }, { name: 'regimen', label: 'Regimen' },
-    { name: 'cycle', label: 'Cycle', type: 'number' }, { name: 'notes', label: 'Notes', type: 'textarea', optional: true }, source,
+    { name: 'cycle', label: 'Cycle', type: 'number' }, { name: 'notes', label: 'Notes', type: 'textarea', optional: true }, source, ...evidence,
   ],
   studies: [
     { name: 'date', label: 'Date', type: 'date' }, { name: 'modality', label: 'Modality', type: 'select', options: modalities },
-    { name: 'study_label', label: 'Study label' }, { name: 'report_text', label: 'Report text (verbatim)', type: 'textarea', optional: true }, source,
+    { name: 'study_label', label: 'Study label' }, { name: 'report_text', label: 'Report text (verbatim)', type: 'textarea', optional: true }, source, ...evidence,
   ],
   measurements: [
     { name: 'study_id', label: 'Study', type: 'study' }, { name: 'lesion_key', label: 'Lesion key' }, { name: 'site', label: 'Documented location' },
     { name: 'long_axis_mm', label: 'Long axis (mm)', type: 'number' },
     { name: 'short_axis_mm', label: 'Short axis (mm)', type: 'number', optional: true },
-    { name: 'notes', label: 'Notes', type: 'textarea', optional: true }, source,
+    { name: 'notes', label: 'Notes', type: 'textarea', optional: true }, source, ...evidence,
   ],
 };
 
-const nullable = new Set(['source_date', 'short_axis_mm']);
+const nullable = new Set(['source_date', 'short_axis_mm', 'anchor_page', 'anchor_quote', 'anchor_region']);
 
 export function toDraft(entity: Entity, record: AnyRecord): Record<string, string> {
   const values = record as unknown as Record<string, unknown>;
