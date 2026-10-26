@@ -7,11 +7,15 @@ import os
 import sqlite3
 import uuid
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterator
 
 DEFAULT_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "oncoscope.sqlite3"
+# Demonstration mode keeps its own database (and therefore its own document store) so it never opens protected storage.
+DEMO_DB_PATH = Path(__file__).resolve().parents[1] / "data" / "demo" / "oncoscope-demo.sqlite3"
+MODES = ("protected", "demo")
 
 # Tables holding source-linked patient records. Names are trusted server-side constants.
 RECORD_TABLES = ("sources", "events", "labs", "treatments", "studies", "measurements")
@@ -20,8 +24,17 @@ PROVENANCES = ("transcribed", "extracted", "user_observation")
 VERIFICATION_STATES = ("entered", "reviewed", "verified")
 
 
+def app_mode() -> str:
+    """'protected' (the default: a local owner must unlock) or 'demo' (explicit, synthetic demonstrations and tests)."""
+    mode = os.environ.get("ONCOSCOPE_MODE", "protected").strip().lower()
+    if mode not in MODES:
+        raise RuntimeError(f"ONCOSCOPE_MODE must be one of {', '.join(MODES)}")
+    return mode
+
+
 def database_path() -> Path:
-    return Path(os.environ.get("ONCOSCOPE_DB_PATH", str(DEFAULT_DB_PATH))).expanduser()
+    default = DEFAULT_DB_PATH if app_mode() == "protected" else DEMO_DB_PATH
+    return Path(os.environ.get("ONCOSCOPE_DB_PATH", str(default))).expanduser()
 
 
 def document_dir() -> Path:
@@ -191,10 +204,25 @@ def _m3_evidence_and_extraction(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX idx_sources_document ON sources(patient_id, document_sha256)")
 
 
+def _m4_local_owner_and_audit_actor(conn: sqlite3.Connection) -> None:
+    # One local owner per installation. Only an Argon2id verifier (salted, encoded by argon2-cffi) is stored.
+    conn.execute("""CREATE TABLE local_owner (
+      id INTEGER PRIMARY KEY CHECK(id = 1), uid TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL,
+      password_verifier TEXT NOT NULL CHECK(password_verifier LIKE '$argon2id$%'),
+      created_at TEXT NOT NULL, updated_at TEXT
+    )""")
+    conn.execute("""CREATE TRIGGER local_owner_no_delete BEFORE DELETE ON local_owner
+                    BEGIN SELECT RAISE(ABORT, 'the local owner cannot be removed'); END""")
+    # Existing entries keep NULL actors ("unknown"): nobody is invented after the fact, and their hashes are unchanged.
+    for column in ("actor_id TEXT", "actor_label TEXT"):
+        conn.execute(f"ALTER TABLE audit_log ADD COLUMN {column}")
+
+
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "phase1 baseline schema", _m1_phase1_baseline),
     (2, "record uids, revisions, verification status, source documents, hash-chained audit", _m2_provenance_and_audit),
     (3, "evidence anchors, provenance, extraction review queue, document text cache", _m3_evidence_and_extraction),
+    (4, "local owner verifier, audit actor", _m4_local_owner_and_audit_actor),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 
@@ -234,6 +262,11 @@ def init_db() -> None:
 
 # --- Writes -----------------------------------------------------------------------------------
 
+# Who is responsible for the current request's writes: (actor_id, actor_label). Set by the API's access middleware
+# from the authenticated session (or to the demonstration actor in demo mode); never taken from request content.
+current_actor: ContextVar[tuple[str, str] | None] = ContextVar("current_actor", default=None)
+DEMO_ACTOR = ("demo", "Synthetic demonstration mode (no sign-in)")
+
 def insert_record(conn: sqlite3.Connection, table: str, data: dict) -> dict:
     # These table/column names come only from trusted server-side constants.
     data = {**data, "uid": str(uuid.uuid4())}
@@ -266,22 +299,29 @@ def _entry_hash(prev_hash: str | None, entry: dict) -> str:
     payload = {key: entry.get(key) for key in
                ("entity_type", "entity_id", "patient_id", "action", "detail_json", "reason", "recorded_at")}
     payload["prev_hash"] = prev_hash
+    # Actors were added in schema v4. Hashing them only when present keeps every earlier entry's hash unchanged.
+    if entry.get("actor_id") is not None:
+        payload["actor_id"] = entry["actor_id"]
+        payload["actor_label"] = entry.get("actor_label")
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
 def audit(conn: sqlite3.Connection, entity: str, entity_id: int, action: str, detail: dict,
           patient_id: int | None = None, reason: str | None = None) -> None:
+    actor = current_actor.get()
+    if actor is None and app_mode() == "protected":
+        raise RuntimeError("Refusing to record a change without an authenticated actor")
     last = conn.execute("SELECT entry_hash FROM audit_log ORDER BY id DESC LIMIT 1").fetchone()
     entry = {
         "entity_type": entity, "entity_id": entity_id, "patient_id": patient_id, "action": action,
         "detail_json": json.dumps(detail, default=str, sort_keys=True), "reason": reason, "recorded_at": now_utc(),
+        "actor_id": actor[0] if actor else None, "actor_label": actor[1] if actor else None,
     }
     prev_hash = last["entry_hash"] if last else None
-    conn.execute(
-        """INSERT INTO audit_log(entity_type,entity_id,patient_id,action,detail_json,reason,recorded_at,prev_hash,entry_hash)
-           VALUES(:entity_type,:entity_id,:patient_id,:action,:detail_json,:reason,:recorded_at,:prev_hash,:entry_hash)""",
-        {**entry, "prev_hash": prev_hash, "entry_hash": _entry_hash(prev_hash, entry)},
-    )
+    row = {**entry, "prev_hash": prev_hash, "entry_hash": _entry_hash(prev_hash, entry)}
+    if actor is None:  # no actor columns named, so pre-v4 databases (upgrade tests) can still be written
+        del row["actor_id"], row["actor_label"]
+    conn.execute(f"INSERT INTO audit_log({','.join(row)}) VALUES({','.join(':' + k for k in row)})", row)
 
 
 def audit_head(conn: sqlite3.Connection) -> dict:

@@ -126,8 +126,9 @@ def evaluate_system(manifest: dict, documents: Path) -> dict:
     """Imports the corpus through the API into a temporary database and checks review-queue behaviour end to end."""
     from fastapi.testclient import TestClient
     tmp = tempfile.mkdtemp(prefix="oncoscope-benchmark-")
-    previous = os.environ.get("ONCOSCOPE_DB_PATH")
+    previous = {k: os.environ.get(k) for k in ("ONCOSCOPE_DB_PATH", "ONCOSCOPE_MODE")}
     os.environ["ONCOSCOPE_DB_PATH"] = str(Path(tmp) / "benchmark.sqlite3")
+    os.environ["ONCOSCOPE_MODE"] = "demo"   # a fictional corpus in a throwaway database, never protected storage
     try:
         from .main import app
         with TestClient(app) as c:
@@ -186,10 +187,11 @@ def evaluate_system(manifest: dict, documents: Path) -> dict:
                 "anchors_verified": f"{anchors_ok}/{len(labs)}", "findings": finding_results,
             }
     finally:
-        if previous is None:
-            os.environ.pop("ONCOSCOPE_DB_PATH", None)
-        else:
-            os.environ["ONCOSCOPE_DB_PATH"] = previous
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
         shutil.rmtree(tmp, ignore_errors=True)   # the throwaway database and document copies do not outlive the run
 
 

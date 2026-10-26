@@ -151,5 +151,5 @@ def test_v2_database_upgrades_to_v3(tmp_path, monkeypatch):
     with db.connection() as c:
         lab_row = dict(c.execute("SELECT * FROM labs").fetchone())
         assert (lab_row["value"], lab_row["provenance"], lab_row["anchor_quote"], lab_row["revision"]) == (42, "transcribed", None, 1)
-        assert c.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert c.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
         assert db.verify_audit_chain(c) == {"valid": True, "entries_checked": 3, "first_invalid_id": None}

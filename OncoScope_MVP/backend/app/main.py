@@ -10,15 +10,15 @@ from fastapi.responses import JSONResponse, PlainTextResponse, Response
 from pydantic import BaseModel, ValidationError
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from . import documents, extraction
+from . import auth, documents, extraction
 from .db import (
-    OBSERVATION_TABLES, RECORD_TABLES, SCHEMA_VERSION, audit, audit_head, connection, init_db, insert_record, now_utc, update_record,
-    verify_audit_chain,
+    DEMO_ACTOR, OBSERVATION_TABLES, RECORD_TABLES, SCHEMA_VERSION, app_mode, audit, audit_head, connection, current_actor,
+    init_db, insert_record, now_utc, update_record, verify_audit_chain,
 )
 from .models import (
     ANCHOR_FIELDS, CREATE_MODELS, EDITABLE_FIELDS, NULLABLE_FIELDS, Correction, EventCreate, LabCorrection, LabCreate,
-    ExtractionAccept, ExtractionReject, MeasurementCreate, PatientCreate, SourceCreate, StatusChange, StudyCreate,
-    TreatmentCreate,
+    ExtractionAccept, ExtractionReject, MeasurementCreate, OwnerSetup, PatientCreate, SourceCreate, StatusChange, StudyCreate,
+    TreatmentCreate, Unlock,
 )
 from .evidence import build_findings
 from .reporting import build_csv, build_export, build_report, patient_records
@@ -28,15 +28,61 @@ from .units import exact_difference, format_number, rule_for, test_key, unit_spe
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    auth.reset()
+    if app_mode() == "demo":
+        with connection() as conn:
+            if auth.owner(conn):
+                raise RuntimeError("Demonstration mode refuses to open protected storage (this database has a local owner)")
     yield
 
 
 app = FastAPI(
-    title="OncoScope local API", version="0.3.0", lifespan=lifespan,
+    title="OncoScope local API", version="0.4.0", lifespan=lifespan,
     description="Local-only prototype. Organizes sources; does not diagnose, stage, or assess clinical response.",
 )
 # Rejects requests whose Host header is not loopback (DNS-rebinding protection for a local service).
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost", "testserver"])
+
+
+# The only operations reachable without a session in protected mode. Everything else needs a valid bearer token.
+PUBLIC_ROUTES = {("GET", "/api/health"), ("GET", "/api/auth/status"), ("POST", "/api/auth/setup"), ("POST", "/api/auth/unlock")}
+LOOPBACK_PEERS = {"127.0.0.1", "::1", "testclient"}   # "testclient" is the in-process test transport, not a network peer
+LOCKED = {"detail": "OncoScope is locked. Unlock it to continue."}
+
+
+def foreign_origin(request: Request) -> bool:
+    """True for requests a browser marks as coming from another web origin. The UI is same-origin (via the dev proxy)."""
+    if request.headers.get("sec-fetch-site") in ("cross-site", "same-site"):
+        return True
+    origin = request.headers.get("origin")
+    host = request.headers.get("host", "")
+    return origin is not None and origin not in (f"http://{host}", f"https://{host}")
+
+
+@app.middleware("http")
+async def access_control(request: Request, call_next):
+    # Loopback-only even if someone binds the server to another interface.
+    if request.client is None or request.client.host not in LOOPBACK_PEERS:
+        return JSONResponse({"detail": "OncoScope accepts connections from this computer only"}, status_code=403)
+    if not request.url.path.startswith("/api/"):
+        return await call_next(request)
+    if foreign_origin(request):
+        return JSONResponse({"detail": "Requests from other web origins are refused"}, status_code=403)
+    if app_mode() == "demo":
+        actor = DEMO_ACTOR
+    elif (request.method, request.url.path) in PUBLIC_ROUTES:
+        actor = None
+    else:
+        # Missing, unknown, expired and revoked tokens all get the same answer.
+        session = auth.session_for(auth.bearer_token(request.headers.get("authorization")))
+        if session is None:
+            return JSONResponse(LOCKED, status_code=401, headers={"WWW-Authenticate": "Bearer"})
+        actor = session.actor
+    marker = current_actor.set(actor)
+    try:
+        return await call_next(request)
+    finally:
+        current_actor.reset(marker)
 
 
 @app.middleware("http")
@@ -59,6 +105,12 @@ async def validation_handler(_request: Request, exc: RequestValidationError):
     return JSONResponse(status_code=422, content={"detail": [
         {"loc": list(e.get("loc", ())), "msg": e.get("msg", "Invalid value")} for e in exc.errors()
     ]})
+
+
+@app.exception_handler(auth.AuthError)
+async def auth_error_handler(_request: Request, exc: auth.AuthError):
+    headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+    return JSONResponse(status_code=exc.status, content={"detail": exc.detail}, headers=headers)
 
 
 ENTITY_LABEL = {"sources": "source", "events": "event", "labs": "lab", "treatments": "treatment",
@@ -219,7 +271,66 @@ def correct(entity: str, record_id: int, correction: Correction) -> dict:
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "scope": "local", "clinical_decision_support": False, "schema_version": SCHEMA_VERSION}
+    return {"status": "ok", "scope": "local", "clinical_decision_support": False, "schema_version": SCHEMA_VERSION,
+            "mode": app_mode()}
+
+
+# --- Protected access ---------------------------------------------------------------------------
+
+def session_reply(token: str, owner_row: dict) -> dict:
+    # The token is returned once, in this no-store response body; the UI keeps it in memory only.
+    return {"token": token, "actor": {"id": auth.actor_of(owner_row)[0], "label": owner_row["display_name"]},
+            "idle_seconds": auth.idle_seconds(), "max_seconds": auth.max_seconds()}
+
+
+@app.get("/api/auth/status")
+def auth_status():
+    """Enough for the lock screen; nothing about cases or the owner."""
+    protected = app_mode() == "protected"
+    with connection() as conn:
+        configured = protected and auth.owner(conn) is not None
+    return {"mode": app_mode(), "setup_required": protected and not configured, "encrypted_at_rest": False}
+
+
+@app.post("/api/auth/setup", status_code=201)
+def auth_setup(payload: OwnerSetup):
+    with connection() as conn:
+        row = auth.create_owner(conn, payload.display_name, payload.passphrase)
+        marker = current_actor.set(auth.actor_of(row))
+        try:
+            audit(conn, "local_owner", 1, "owner_setup", {"owner_uid": row["uid"], "display_name": row["display_name"],
+                                                          "verifier": "argon2id"})
+            token = auth.start_session(row)
+            audit(conn, "local_owner", 1, "unlock", {})
+        finally:
+            current_actor.reset(marker)
+    return session_reply(token, row)
+
+
+@app.post("/api/auth/unlock")
+def auth_unlock(payload: Unlock):
+    if app_mode() != "protected":
+        raise HTTPException(409, "Demonstration mode has nothing to unlock")
+    with connection() as conn:
+        row = auth.verify_passphrase(conn, payload.passphrase)
+        marker = current_actor.set(auth.actor_of(row))
+        try:
+            token = auth.start_session(row)
+            audit(conn, "local_owner", 1, "unlock", {})
+        finally:
+            current_actor.reset(marker)
+    return session_reply(token, row)
+
+
+@app.post("/api/auth/lock")
+def auth_lock(request: Request):
+    """Revokes the presented session immediately."""
+    if app_mode() != "protected":
+        raise HTTPException(409, "Demonstration mode has nothing to lock")
+    with connection() as conn:
+        audit(conn, "local_owner", 1, "lock", {})
+    auth.end_session(auth.bearer_token(request.headers.get("authorization")))
+    return {"locked": True}
 
 
 @app.get("/api/patients")

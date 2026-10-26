@@ -181,3 +181,21 @@ class ExtractionAccept(BaseModel):
 class ExtractionReject(BaseModel):
     model_config = Strict
     reason: Line = Field(min_length=3, max_length=500)
+
+
+class OwnerSetup(BaseModel):
+    # Passphrases are taken exactly as typed (no whitespace stripping); auth.py checks their length.
+    model_config = ConfigDict(extra="forbid")
+    display_name: Annotated[Line, AfterValidator(str.strip)] = Field(min_length=1, max_length=80)
+    passphrase: str = Field(max_length=1024)
+
+    @model_validator(mode="after")
+    def name_not_blank(self):
+        if not self.display_name:
+            raise ValueError("Enter a name for the local owner")
+        return self
+
+
+class Unlock(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    passphrase: str = Field(min_length=1, max_length=1024)

@@ -18,7 +18,7 @@ from pathlib import Path
 from .db import audit_head, database_path, document_dir, now_utc, verify_audit_chain
 
 MANIFEST_TABLES = ("patients", "sources", "events", "labs", "treatments", "studies", "measurements", "extractions",
-                   "audit_log", "schema_migrations")
+                   "audit_log", "schema_migrations", "local_owner")
 
 
 def _document_path(root: Path, sha256: str) -> Path:

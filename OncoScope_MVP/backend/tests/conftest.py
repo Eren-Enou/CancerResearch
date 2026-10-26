@@ -1,8 +1,16 @@
 """Shared helpers for tests that use the committed fictional fixture documents."""
 from pathlib import Path
 
+import pytest
+
 FIXTURES = Path(__file__).resolve().parents[2] / "fixtures" / "fictional"
 MEDIA = {".txt": "text/plain", ".pdf": "application/pdf", ".png": "image/png"}
+
+
+@pytest.fixture(autouse=True)
+def demonstration_mode(monkeypatch):
+    """Tests run in explicitly isolated synthetic demonstration mode unless they opt into protected mode themselves."""
+    monkeypatch.setenv("ONCOSCOPE_MODE", "demo")
 
 
 def fixture_bytes(name: str) -> bytes:
