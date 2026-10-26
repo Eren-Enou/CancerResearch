@@ -37,6 +37,8 @@ Future Phase 4: Simulation sandbox using synthetic/abstract inputs
 | `measurements` | study_id, lesion_key, site, long_axis_mm, short_axis_mm, source_id | One key per study, >0 dimensions; source/patient verified |
 | `audit_log` | entity_type, entity_id, patient_id, action, detail_json, reason, recorded_at, prev_hash, entry_hash | Append-only (SQLite triggers); SHA-256 hash chain; actions `create`, `correct`, `status`, `attach_document` |
 | `schema_migrations` | version, name, applied_at | Mirrors `PRAGMA user_version` |
+| `extractions` | source_id, document_sha256, parser, parser_version, page, start, end, original_text, proposed_json, issues_json, status, accepted_json, decision_reason, record_id | Proposals only; records are created by an audited accept |
+| `document_text` | document_sha256, extractor, page, text | Derived cache; reproducible from the original file |
 
 Since migration 2, every patient and record row also has a random `uid` (stable across exports), and every record row has
 `revision` (starts at 1, +1 per correction), `verification_status` (`entered`/`reviewed`/`verified`) and `updated_at`.
@@ -47,6 +49,32 @@ Dates are ISO-8601 calendar dates. Values use SQLite REAL, and units are explici
 Sources preserve metadata about originals and, optionally, one attached synthetic file (PDF/TXT/PNG/JPEG). Files are stored
 content-addressed under `backend/data/documents/<sha256[:2]>/<sha256>` (configurable with `ONCOSCOPE_DOCUMENT_DIR`), cannot be
 replaced once attached, and are re-hashed whenever they are served.
+
+## Evidence model (migration 3)
+
+Every observation (`events`, `labs`, `treatments`, `studies`, `measurements`) has `provenance`
+(`transcribed` | `extracted` | `user_observation`) and an optional anchor: `anchor_page`, `anchor_quote`,
+`anchor_start`/`anchor_end` (character offsets into that page of the document's text layer) or `anchor_region`
+(`x,y,w,h` percent of the page/image), plus `extraction_id` for accepted proposals.
+
+- `document_text(document_sha256, extractor, page, text)` caches the deterministic text layer. It is derived data keyed by
+  the file hash and extractor version (`utf8-text-v1`, `pypdf-<version>-v1`); originals are never modified.
+- Anchor rules (server-side, on create and on every correction): the source must have a document; a quote must occur on
+  the stated page (or uniquely in the document) and is stored with resolved offsets; given offsets must match the quote
+  exactly; text documents take quotes, images take regions, PDFs take either; user observations take no anchor.
+- `extractions` holds proposals: original text, page, offsets, proposed fields, issues, parser name/version, document hash,
+  status (`pending` → `accepted` | `rejected`), accepted fields, reason, and the created record. Unique per
+  (source, parser, version, page, start), so re-running is idempotent. Accepting re-validates the full lab record (units,
+  dates, anchor against the stored text) and refuses duplicates from the same source.
+- `evidence.build_findings` derives conflict / duplicate / date / missing-support findings on read; nothing is stored or
+  resolved.
+
+## Backup and restore
+
+`app.backup` snapshots SQLite through the backup API, copies the document store and writes `manifest.json`
+(schema version, `PRAGMA integrity_check`, audit-chain verification, per-table row count and SHA-256 of all rows,
+per-document hash check). `app.restore` verifies the backup against its manifest, refuses conflicts in the target
+document store, backs up any existing target first, restores, and compares the restored copy with the manifest.
 
 ## Migrations
 
@@ -71,6 +99,9 @@ not correctable. The audit entry stores the complete before and after rows, the 
 - **Imaging:** text radiology reports and manually sourced lesion measurement differences by stable lesion key; no DICOM viewer yet.
 - **Sources:** source IDs, kind, document date, origin, attached document hash and verification, citing records.
 - **Audit:** all audit entries with field-level before → after values and hash-chain status.
+- **Documents:** text layer or image of each attached file, cited passages/regions highlighted, selection → anchored transcription, CA-125 proposal button.
+- **Review:** extraction proposals beside their original text; accept / correct / reject with reasons.
+- **Evidence:** findings, records per date and per document, consecutive value differences.
 - **Add record:** typed forms that require the user to register and select a source first.
 
 ## Validation and interpretation boundaries

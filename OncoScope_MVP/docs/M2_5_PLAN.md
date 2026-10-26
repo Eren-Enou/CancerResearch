@@ -62,3 +62,10 @@ for conflicts/duplicates/missing evidence, a restore workflow, and backup manife
 - Backend tests for duplicate imports, invalid values, mixed units, mismatched dates, unsupported documents,
   source-ownership violations, malformed extraction results, restore.
 - Playwright: the 11-step M2.5 demonstration on a fresh database, including backup/restore through the CLI.
+
+## Outcome
+
+All milestone acceptance criteria above are covered by automated tests: `backend/tests/test_m25_evidence.py` (A, B),
+`test_m25_extraction.py` (C), `test_m25_findings.py` (D, report audit against original files), `test_m25_restore.py` (E),
+and `frontend/e2e/reconstruction.spec.ts` (F, 11-step demonstration on a fresh database). Known limitations are listed
+in the README; remaining M3 work is in `docs/ROADMAP.md`.

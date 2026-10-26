@@ -33,7 +33,33 @@ privacy/authentication/encryption plan, and the nontechnical-user exit test belo
 
 **Exit test:** A nontechnical user enters a fictional case solely from synthetic documents, observes accurate chronology, corrects a transcription mistake, and produces a report where every fact can be traced to its exact fictional source. Another developer verifies every reported number and source from raw fixtures.
 
+## M2.5 — Verified evidence and case reconstruction
+
+**Status: delivered on synthetic data (see `docs/M2_5_PLAN.md`, `docs/WALKTHROUGH_M2_5.md`).** Document viewer with
+anchored passages/regions, provenance on every observation, deterministic CA-125 extraction into an audited review
+queue, evidence findings, document-cited report with an independent audit script, verified backup/restore, schema v3.
+Tests: 60 backend, 18 frontend, 2 Playwright demonstrations (M2 and M2.5) on fresh databases.
+
+Remaining from M2/M2.5: OCR or rendered-PDF viewing, multi-layout extraction beyond the fixtures, keyboard-accessible
+region drawing and a full accessibility audit, re-validation of anchors after extractor upgrades, a nontechnical-user
+session of the exit test.
+
 ## M3 — Real-data readiness review (not yet approved)
+
+Work required before the M3 privacy and security review can even start (none of this exists today):
+
+1. **Identity and access:** authentication, per-user accounts and authorization; reviewer identity on every audit entry
+   (today "accepted"/"verified" cannot say *who*).
+2. **Encryption at rest:** SQLite database, document store, `document_text` cache and backups; key management and recovery.
+3. **Deletion and retention:** per-case deletion/export on request (records are currently undeletable by design),
+   retention policy, secure erasure of documents and backups, and how that coexists with an append-only audit log.
+4. **Consent workflow** and documented purpose for any real record.
+5. **Untrusted document handling:** sandboxed PDF/image parsing, size/complexity limits, malware considerations, metadata
+   scrubbing (PDF/EXIF/DICOM identifiers), and no document content in logs.
+6. **Audit integrity:** signed or externally anchored audit chain; operator actions (backup, restore) audited.
+7. **Threat model** covering local OS accounts, the browser, the loopback API, backups and restore media.
+8. **Legal/regulatory assessment** for the intended jurisdiction and use (no compliance is claimed today).
+9. **Independent security and privacy review**, then a controlled import demonstration.
 
 **Goal:** Meet privacy/consent, access, encrypted-storage/backup, original-document verification, audit-integrity, and legal requirements defined in `SECURITY.md`.
 

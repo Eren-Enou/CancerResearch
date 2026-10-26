@@ -1,4 +1,4 @@
-# OncoScope — Phase 1 local prototype (M2 hardening)
+# OncoScope — Phase 1 local prototype (M2.5: verified evidence and case reconstruction)
 
 **Status:** Source-linked medical-record organizer built with synthetic data only. Not a medical device or an oncology decision-support tool.
 
@@ -7,6 +7,33 @@
 This repository is intentionally narrow in scope: a **FastAPI + SQLite API and a React + TypeScript dashboard**. It does not contain medical scans, a real patient's information, machine learning, RECIST response logic, or molecular simulation.
 
 ## What's implemented
+
+**M2.5 — reconstructing a case from documents** (walkthrough: `docs/WALKTHROUGH_M2_5.md`)
+
+- **Documents view**: each attached fictional file shown beside the records that cite it — the deterministic text layer
+  (UTF-8 text; pypdf for PDFs, per page) with cited passages highlighted, or the image with cited regions outlined; the
+  original file stays byte-identical and is re-hashed whenever it is served
+- **Evidence anchors**: any observation can cite a page + exact quoted passage (resolved to character offsets and checked
+  against the document text; absent or ambiguous quotes are refused) or an image region `x,y,w,h` (%)
+- **Provenance** on every observation: `transcribed` (from a document), `extracted` (accepted from the review queue) or
+  `user_observation` (not from a document; cannot carry an anchor)
+- **Source-anchored transcription**: select text (or drag a region) in the viewer → the entry form opens prefilled with the
+  source and location
+- **Deterministic CA-125 extraction** (`ca125-lab` v1): proposes test/value/unit/date per line with the original passage and
+  location; reports `date_ambiguous`, `value_qualifier`, `value_not_found`, `unit_not_accepted`, `date_after_source` … instead
+  of guessing; re-running never duplicates proposals
+- **Review queue**: compare each proposal with its original text; accept, correct (reason required) or reject (reason
+  required); accepted values become `extracted` records in state `reviewed`, never `verified`; all decisions audited
+- **Evidence view**: conflicting values, possible duplicate reports / same events, observations dated after their source,
+  transcriptions without a location, sources without a file, pending proposals — listed, never resolved; records per
+  date and per document; consecutive same-unit differences
+- **Traceable report**: every observation line names provenance, file, SHA-256 prefix, page and character range with the
+  quoted passage; `fixtures/audit_report.py` re-checks those citations against the original files without the app
+- **Verified backup/restore**: backups carry a manifest (table hashes, audit chain, document hashes); `python -m app.restore`
+  verifies before and after, preserves any existing target, and refuses tampered backups
+- Duplicate imports (same bytes within a case) refused; schema migration 3 upgrades M2 databases in place
+
+**M2 — hardening** (still in place)
 
 - Fictional demonstration case seeded into a local SQLite database; repeatable seeding
 - **Blank-database start in the UI**: create a fictional case (always flagged synthetic; the API has no way to create a non-synthetic case)
@@ -70,17 +97,19 @@ npm install && npm run dev
 
 ```powershell
 cd OncoScope_MVP\backend
-python -m pytest -q                 # 28 API, migration, audit, unit-rule and export tests
+python -m pytest -q                 # 60 tests: API, migrations, audit, units, evidence, extraction, findings, restore
 
 cd ..\frontend
 npm run build                       # strict TypeScript + production build
-npm test                            # Vitest component/unit tests (12)
-npm run test:e2e                    # Playwright: required M2 demonstration in a real browser
+npm test                            # Vitest component/unit tests (18)
+npm run test:e2e                    # Playwright: M2 and M2.5 demonstrations in a real browser
 ```
 
-`npm run test:e2e` starts its own API on port 8010 with a **new empty database** in the OS temp directory and a Vite server on port 5180, then drives the UI. It uses the installed Microsoft Edge (`PW_CHANNEL=chrome` to use Chrome instead; on non-Windows set `ONCOSCOPE_PYTHON` if the venv is elsewhere). No browser download is needed.
+`npm run test:e2e` starts two isolated stacks (API 8010 + Vite 5180 for M2, API 8011 + Vite 5181 for M2.5), each on a **new empty database** in the OS temp directory, then drives the UI. The M2.5 run also calls the backup/restore CLI and the report audit script. It uses the installed Microsoft Edge (`PW_CHANNEL=chrome` to use Chrome instead; on non-Windows set `ONCOSCOPE_PYTHON` if the venv is elsewhere). No browser download is needed.
 
 ## User workflow
+
+For the document-centred M2.5 workflow follow `docs/WALKTHROUGH_M2_5.md`. The general workflow:
 
 1. On an empty database, create a **fictional case**. Otherwise select **Overview**.
 2. **Add record** → create a **Source** first (label, type, date, fictional origin). The new source is preselected for the next record; date, test, unit and study also stay filled for fast entry from one document.
@@ -113,7 +142,12 @@ npm run test:e2e                    # Playwright: required M2 demonstration in a
 | GET | `/api/patients/{id}/timeline` | Unified chronological record |
 | GET | `/api/patients/{id}/compare?baseline_id=1&followup_id=2` | Source-linked arithmetic differences |
 | GET | `/api/patients/{id}/audit` · `/api/audit/verify` | Audit history · hash-chain verification |
-| GET | `/api/patients/{id}/report.md` | Descriptive Markdown report |
+| GET | `/api/sources/{id}/document/text` | Deterministic text layer used for anchors and extraction |
+| POST | `/api/sources/{id}/extract` | Propose CA-125 transcriptions (idempotent) |
+| GET | `/api/patients/{id}/extractions[?status=]` | Review queue |
+| POST | `/api/extractions/{id}/accept` · `/reject` | Audited decision (`{"changes": {...}, "reason": "..."}`) |
+| GET | `/api/patients/{id}/evidence` | Findings: conflicts, duplicates, date mismatches, missing support |
+| GET | `/api/patients/{id}/report.md` | Descriptive Markdown report with evidence citations |
 | GET | `/api/patients/{id}/export.json` · `/export/{table}.csv` | Read-only synthetic export |
 
 `{type}` is one of `sources`, `events`, `labs`, `treatments`, `studies`, `measurements`. Clinical dates are ISO `YYYY-MM-DD` calendar dates (observations cannot be dated in the future; `plan` events can). System timestamps (`entered_at`, `updated_at`, audit `recorded_at`) are UTC with a `Z` suffix; rows created before migration 2 keep SQLite's `YYYY-MM-DD HH:MM:SS` UTC form. The app performs **no unit conversion**.
@@ -130,10 +164,14 @@ OncoScope_MVP/
 │   │   ├── units.py         Lab unit registry, number formatting, exact differences
 │   │   ├── documents.py     Content-addressed synthetic document store (SHA-256)
 │   │   ├── reporting.py     Markdown report, JSON/CSV export
-│   │   ├── backup.py        Non-destructive backup CLI
+│   │   ├── extraction.py    Rule-based CA-125 parser (proposals only)
+│   │   ├── evidence.py      Documentation findings (never resolved automatically)
+│   │   ├── backup.py        Backup CLI with verification manifest
+│   │   ├── restore.py       Verified, non-destructive restore CLI
 │   │   └── seed.py          Explicitly synthetic ovarian-monitoring example
 │   ├── tests/test_api.py    Phase 1 API regression tests
 │   ├── tests/test_m2.py     M2 tests incl. the required demonstration from a blank database
+│   ├── tests/test_m25_*.py  Evidence anchors, extraction, findings/report audit, backup/restore
 │   ├── requirements.txt
 │   └── requirements-dev.txt
 ├── frontend/
@@ -141,13 +179,19 @@ OncoScope_MVP/
 │   ├── src/components/      Chart, correction/history tools, forms, sources, audit
 │   ├── src/records.ts       Editable-field specs, change detection, number display
 │   ├── src/*.test.ts(x)     Vitest tests
-│   ├── e2e/                 Playwright end-to-end demonstration
+│   ├── e2e/                 Playwright M2 and M2.5 demonstrations
 │   └── src/styles.css       Responsive visual design
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── SECURITY.md
 │   ├── ROADMAP.md
-│   └── M2_PLAN.md           M2 findings and milestone plan
+│   ├── M2_PLAN.md           M2 findings and milestone plan
+│   ├── M2_5_PLAN.md         M2.5 milestones and acceptance criteria
+│   └── WALKTHROUGH_M2_5.md  Step-by-step case reconstruction demonstration
+├── fixtures/
+│   ├── fictional/           Fictional lab/CT reports (TXT, PDF) and an image; byte-stable (binary in git)
+│   ├── make_fixtures.py     Regenerates them deterministically
+│   └── audit_report.py      Independent report-citation audit against the original files
 ├── AGENTS.md                Codex working agreement
 └── .gitignore              Excludes local database, documents, scans and .env
 ```
@@ -156,10 +200,16 @@ OncoScope_MVP/
 
 **Do not import or transcribe real patient data into this version.** This MVP has no authentication, no application-layer database or document encryption, no automatic encrypted backup, no consent workflow, no verified data ingestion from records, no patient access-control boundary, and no production threat model. SQLite content, attached documents and report text are stored unencrypted unless the operating system's disk encryption covers them. Only run on loopback (`127.0.0.1`); do not deploy or expose it on a network.
 
-- Records cannot be deleted (by design for now); a mistaken record can only be corrected. There is no restore command; backups are restored by copying the backup file over a stopped database.
+- Records cannot be deleted (by design for now); a mistaken record can only be corrected or rejected before acceptance.
+- Restore is a CLI, restores the whole database (all cases), and expects the API to be stopped (not enforced).
 - The audit hash chain detects edits made outside the app, but anyone with file access can rewrite the whole chain consistently; it is tamper-evident against casual edits, not cryptographically signed.
 - Attached documents are verified by hash, not by content: nothing checks that a document actually says what the transcribed values say.
-- Inline viewing of attached PDFs has not been verified in a browser (served with `Content-Security-Policy: sandbox`, which some browsers refuse to render inline for PDFs). Text and image documents and hash verification were verified.
+- The Documents view shows a PDF's extracted text layer, not its rendered pages; "Open original file" may download rather than display the PDF (served with `Content-Security-Policy: sandbox`; inline rendering not verified). Images and text display inline.
+- Extraction covers CA-125 lines in documents with a text layer only. It is line-based and was tested on the simple fixture layouts; multi-column or table-wrapped PDFs may split or merge lines. There is no OCR: images and scanned PDFs need manual, region-anchored transcription.
+- Character offsets refer to the text layer of a specific extractor version (e.g. `pypdf-6.21.2-v1`). Anchors are checked when written; after a pypdf upgrade the text may differ and existing anchors are not re-validated automatically.
+- Region anchors are checked for format and bounds only, never against image content. Drawing a region needs a mouse (no keyboard alternative yet).
+- Findings use exact matching (same test and date, same study date and modality, …); they do not detect the same event recorded on different dates or with different wording.
+- Reviewer identity is not recorded: there is no login, so "accepted" / "reviewed" / "verified" say what happened, not who did it.
 - The unit registry covers CA-125 only; other tests accept any well-formed unit string.
 - Lesion keys are matched exactly (case-sensitive); a mistyped key shows as unmatched rather than being merged.
 - Real multi-user isolation has not been built. DICOM rendering and registration are Phase 2 work.

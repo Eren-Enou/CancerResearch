@@ -15,6 +15,10 @@ The app does **not** provide user login, per-user authorization, encryption-at-r
 - Audit log is append-only at the SQLite level and hash-chained; `GET /api/audit/verify` detects out-of-band edits.
 - Validation errors report field and message only; submitted values are not echoed back.
 - Export (JSON/CSV) is refused for any case not flagged synthetic; CSV text cells are guarded against formula injection.
+- Extraction is local, deterministic and rule-based (no model, no network). PDF parsing uses pypdf in-process; a malformed
+  PDF is reported as unreadable. Parsing untrusted PDFs is attack surface that must be isolated before real documents.
+- Backups include a verification manifest; restores verify before and after and never overwrite an existing database or
+  differing document bytes without keeping them. Backups and the derived `document_text` cache are **unencrypted**.
 - Input constraints and patient/source ownership checks.
 - Git excludes SQLite databases, DICOM files, `.env` files, local data directories (including attached documents and backups), and Playwright output.
 - Manual/synthetic records preserve source linkage; initial audit history retained for writes.
