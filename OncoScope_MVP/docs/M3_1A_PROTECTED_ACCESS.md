@@ -113,7 +113,8 @@ belong to later increments.
 
 ## Remaining risks (not fixed by this milestone)
 
-1. **Plaintext at rest.** Anything that can read `backend/data/` bypasses the lock entirely, including the CLI tools
+1. **Plaintext at rest** (database: **fixed in M3.1-C**; documents remain plaintext until M3.1-D). Before M3.1-C,
+   anything that could read `backend/data/` bypassed the lock entirely, including the CLI tools
    (`app.backup`, `app.restore`), other programs, other OS accounts with access, and a lost device. Restores and backups
    made with the CLI are not attributed to anyone in the audit log.
 2. **Setup race.** Until the owner is set up, any local process that reaches the API first can become the owner. Set up

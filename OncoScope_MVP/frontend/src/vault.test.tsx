@@ -28,7 +28,7 @@ describe('RecoveryKeyScreen', () => {
     const done = vi.fn();
     render(<RecoveryKeyScreen recoveryKey={KEY} onConfirmed={done} onLock={() => {}} />);
     expect(screen.getByTestId('recovery-key').textContent).toBe(KEY);
-    expect(document.body.textContent).toContain('cannot be recovered by anyone');
+    expect(document.body.textContent).toContain('cannot be opened by anyone, including you');
     fireEvent.click(screen.getByRole('button', { name: 'Copy recovery key' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(KEY));
     fireEvent.submit(screen.getByRole('button', { name: 'Continue to OncoScope' }));
@@ -99,11 +99,17 @@ describe('SecurityView', () => {
   it('shows identifiers only and changes the passphrase', async () => {
     const status = { vault_id: 'v-1', key_id: 'a'.repeat(32), version: 1, created_at: '2026-10-27T00:00:00Z', updated_at: '2026-10-27T00:00:00Z',
       recovery_confirmed: true, passphrase_kdf: { kdf: 'argon2id', time_cost: 3, memory_cost: 65536, parallelism: 4 },
-      derived_key_fingerprints: { database: '0123456789abcdef' }, encrypted_at_rest: false };
+      derived_key_fingerprints: { database: '0123456789abcdef' },
+      database: { state: 'encrypted', cipher: 'SQLCipher 4 (AES-256-CBC, HMAC-SHA512 per page)', sqlcipher_version: '4.19.0 community',
+                  key_fingerprint: '0123456789abcdef', migrated_from_plaintext_at: '2026-10-27T01:00:00Z' },
+      encrypted_at_rest: { database: true, documents: false, backups: 'database snapshot encrypted; documents and manifest are not' } };
     const fetchMock = route({ '/vault/status': () => json(status), '/vault/passphrase': () => json({ changed: true, key_id: status.key_id }) });
     render(<SecurityView />);
     expect((await screen.findByTestId('key-id')).textContent).toBe(status.key_id);
-    expect(document.body.textContent).toContain('Not encrypted yet');
+    expect(document.body.textContent).toContain('Documents are not encrypted yet');
+    expect(screen.getByTestId('database-encryption').textContent).toContain('Encrypted · SQLCipher 4');
+    expect(screen.getByTestId('database-encryption').textContent).toContain('migrated from plaintext 2026-10-27T01:00:00Z');
+    expect(screen.getByTestId('database-key').textContent).toBe('0123456789abcdef');
     fireEvent.change(screen.getByLabelText('Current passphrase'), { target: { value: 'fictional passphrase' } });
     fireEvent.change(screen.getByLabelText('New passphrase'), { target: { value: 'new fictional passphrase' } });
     fireEvent.change(screen.getByLabelText('Repeat new passphrase'), { target: { value: 'different passphrase!' } });

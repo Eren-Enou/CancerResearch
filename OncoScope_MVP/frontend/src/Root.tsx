@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import App from './App';
 import { post, request, setSession, setSessionEndedHandler } from './api';
-import { LockScreen, type SessionInfo } from './components/LockScreen';
+import { LockScreen, StorageNotice, type SessionInfo } from './components/LockScreen';
 import { RecoveryKeyScreen } from './components/RecoveryKey';
 
-type Status = { mode: 'protected' | 'demo'; setup_required: boolean; recovery_available?: boolean };
+type Status = { mode: 'protected' | 'demo'; setup_required: boolean; recovery_available?: boolean; storage?: string; storage_message?: string };
+const OPENABLE = ['setup', 'locked', 'demo'];
 export type Access = { mode: 'demo' } | { mode: 'protected'; actor: SessionInfo['actor']; onLock: () => void };
 
 const ACTIVITY = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
@@ -30,9 +31,10 @@ export default function Root() {
     setStatus(s => s && { ...s, setup_required: false, recovery_available: true });
   }, []);
 
-  useEffect(() => {
+  const loadStatus = useCallback(() => {
     request<Status>('/auth/status').then(setStatus).catch(() => setError('Could not reach the local OncoScope server at 127.0.0.1.'));
   }, []);
+  useEffect(loadStatus, [loadStatus]);
 
   useEffect(() => {
     setSessionEndedHandler(() => endSession('Your session ended. Unlock again to continue.'));
@@ -65,6 +67,8 @@ export default function Root() {
   if (error) return <main className="lock-shell"><p className="error-banner" role="alert">{error}</p></main>;
   if (!status) return <main className="lock-shell"><p className="muted" role="status">Connecting to the local server…</p></main>;
   if (status.mode === 'demo') return <App access={{ mode: 'demo' }} />;
+  if (!session && status.storage && !OPENABLE.includes(status.storage))
+    return <StorageNotice storage={status.storage} message={status.storage_message ?? ''} onRetry={loadStatus} />;
   if (!session) return <LockScreen setupRequired={status.setup_required} recoveryAvailable={status.recovery_available} notice={notice}
     onUnlocked={s => { setSession(s.token); setNotice(''); setGeneration(g => g + 1); setRecoveryKey(s.recovery_key ?? null); setSessionState({ ...s, token: '', recovery_key: null }); }} />;
   if (recoveryKey) return <RecoveryKeyScreen recoveryKey={recoveryKey} onConfirmed={() => setRecoveryKey(null)} onLock={() => lock()} />;

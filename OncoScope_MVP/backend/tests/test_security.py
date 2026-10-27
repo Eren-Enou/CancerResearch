@@ -338,8 +338,20 @@ def test_tail_truncation_is_detected_without_external_head(client):
     assert client.get("/api/audit/verify").json()["valid"] is False
 
 
-@pytest.mark.xfail(strict=True, reason="Known gap (threat model T2/T4): records are stored unencrypted at rest. M3.1.")
-def test_database_file_does_not_contain_plaintext_records(client):
-    client.post("/api/patients", json={"label": "Fictional SENTINEL-AT-REST"})
-    raw = Path(os.environ["ONCOSCOPE_DB_PATH"]).read_bytes()
-    assert b"SENTINEL-AT-REST" not in raw
+def test_database_file_does_not_contain_plaintext_records(tmp_path, monkeypatch):
+    """Formerly a strict xfail (threat model T2/T4). Fixed in M3.1-C for protected mode: the database is SQLCipher-
+    encrypted (details in test_encryption.py). Source documents stay plaintext until M3.1-D; demonstration mode's
+    separate synthetic database stays ordinary SQLite."""
+    monkeypatch.setenv("ONCOSCOPE_MODE", "protected")
+    path = tmp_path / "protected" / "oncoscope.sqlite3"
+    monkeypatch.setenv("ONCOSCOPE_DB_PATH", str(path))
+    with TestClient(app) as c:
+        token = c.post("/api/auth/setup", json={"display_name": "Fictional Owner", "passphrase": "fictional passphrase"}).json()["token"]
+        authed = _Authed(c, token)
+        case(authed)
+        authed.post("/api/patients", json={"label": "Fictional SENTINEL-AT-REST"})
+    raw = path.read_bytes()
+    for sentinel in (b"SENTINEL-AT-REST", b"Fictional Case SEC", b"CA-125", b"U/mL"):
+        assert sentinel not in raw, sentinel
+    with pytest.raises(sqlite3.DatabaseError):
+        sqlite3.connect(path).execute("SELECT label FROM patients").fetchall()

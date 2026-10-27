@@ -11,10 +11,11 @@ process.env.ONCOSCOPE_E2E_DB_M26 ??= join(tmpdir(), `oncoscope-e2e-m26-${stamp}`
 process.env.ONCOSCOPE_E2E_DB_M31A ??= join(tmpdir(), `oncoscope-e2e-m31a-${stamp}`, 'oncoscope.sqlite3');
 process.env.ONCOSCOPE_E2E_SESSION_SECONDS ??= '45';
 process.env.ONCOSCOPE_E2E_DB_M31B ??= join(tmpdir(), `oncoscope-e2e-m31b-${stamp}`, 'oncoscope.sqlite3');
+process.env.ONCOSCOPE_E2E_DB_M31C ??= join(tmpdir(), `oncoscope-e2e-m31c-${stamp}`, 'data', 'oncoscope.sqlite3');
 const python = process.env.ONCOSCOPE_PYTHON
   ?? (process.platform === 'win32' ? '.venv\\Scripts\\python.exe' : '.venv/bin/python');
 
-// The M2–M2.6 demonstrations run in explicitly isolated demonstration mode; M3.1-A runs the protected mode.
+// The M2–M2.6 demonstrations run in explicitly isolated demonstration mode; M3.1-A/B/C run the protected mode.
 const stack = (dbPath: string, apiPort: number, uiPort: number, env: Record<string, string> = { ONCOSCOPE_MODE: 'demo' }) => [
   {
     command: `${python} -m uvicorn app.main:app --host 127.0.0.1 --port ${apiPort}`,
@@ -48,6 +49,7 @@ export default defineConfig({
     { name: 'm2.6', testMatch: /fidelity\.spec\.ts/, use: { baseURL: 'http://127.0.0.1:5182', viewport: { width: 1440, height: 900 } } },
     { name: 'm3.1a', testMatch: /protected\.spec\.ts/, use: { baseURL: 'http://127.0.0.1:5183', acceptDownloads: true } },
     { name: 'm3.1b', testMatch: /vault\.spec\.ts/, use: { baseURL: 'http://127.0.0.1:5184' } },
+    { name: 'm3.1c', testMatch: /encryption\.spec\.ts/, use: { baseURL: 'http://127.0.0.1:5185', acceptDownloads: true } },
   ],
   webServer: [
     ...stack(process.env.ONCOSCOPE_E2E_DB_M2, 8010, 5180),
@@ -56,5 +58,6 @@ export default defineConfig({
     ...stack(process.env.ONCOSCOPE_E2E_DB_M31A, 8013, 5183,
       { ONCOSCOPE_MODE: 'protected', ONCOSCOPE_SESSION_MAX_SECONDS: process.env.ONCOSCOPE_E2E_SESSION_SECONDS! }),
     ...stack(process.env.ONCOSCOPE_E2E_DB_M31B, 8014, 5184, { ONCOSCOPE_MODE: 'protected' }),
+    ...stack(process.env.ONCOSCOPE_E2E_DB_M31C, 8015, 5185, { ONCOSCOPE_MODE: 'protected' }),
   ],
 });

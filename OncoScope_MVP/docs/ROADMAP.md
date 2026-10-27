@@ -67,9 +67,13 @@ walkthrough, screen-reader review, all controls listed for M3.1/M3.2.
 
 ## M3.1 — First security controls (in progress; synthetic data only)
 
+**M3.1-C delivered:** SQLCipher-encrypted protected database keyed from the vault, locked start-up, lossless and
+resumable migration tool (`python -m app.encrypt_migrate`), encrypted backups restorable with either credential
+(`M3_1C_DATABASE_ENCRYPTION.md`). Documents are still plaintext. **Next: M3.1-D — encrypted document storage and
+authenticated encrypted backups with the existing vault.**
+
 **M3.1-B delivered:** key vault with a random DEK wrapped by Argon2id(passphrase) and by a recovery key; recovery,
-passphrase change, failure and tampering handling, vault in backups (`M3_1B_KEY_VAULT.md`). The DEK encrypts nothing
-yet. **Next: M3.1-C — migrate the database to SQLCipher with the vault's database key.**
+passphrase change, failure and tampering handling, vault in backups (`M3_1B_KEY_VAULT.md`). (M3.1-C followed.)
 
 **M3.1-A delivered:** protected mode with a local owner (Argon2id verifier), short-lived in-memory sessions, rate-limited
 unlock, foreign-origin and non-loopback refusal, audit actor on every new entry, lock screen and authorized downloads

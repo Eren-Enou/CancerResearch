@@ -1,7 +1,7 @@
 """OncoScope local API: descriptive, source-linked clinical record organization."""
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 import json
-import sqlite3
 from urllib.parse import unquote
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -12,8 +12,9 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import auth, documents, extraction
 from .db import (
-    DEMO_ACTOR, OBSERVATION_TABLES, RECORD_TABLES, SCHEMA_VERSION, app_mode, audit, audit_head, connection, current_actor,
-    init_db, insert_record, now_utc, update_record, verify_audit_chain,
+    DEMO_ACTOR, OBSERVATION_TABLES, RECORD_TABLES, SCHEMA_VERSION, DatabaseLocked, DatabaseRefused, app_mode, audit,
+    audit_head, connection, current_actor, database_key, init_db, insert_record, keyed, now_utc, sqlite, update_record,
+    verify_audit_chain,
 )
 from .models import (
     ANCHOR_FIELDS, CREATE_MODELS, EDITABLE_FIELDS, NULLABLE_FIELDS, Correction, EventCreate, LabCorrection, LabCreate,
@@ -26,19 +27,33 @@ from .reporting import build_csv, build_export, build_report, patient_records
 from .units import exact_difference, format_number, rule_for, test_key, unit_spelling_conflict
 
 
+async def _sweep_sessions() -> None:
+    while True:
+        await asyncio.sleep(5)
+        auth.sweep()
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    init_db()
     auth.reset()
     if app_mode() == "demo":
+        init_db()   # refuses an encrypted (protected) database file
         with connection() as conn:
             if auth.owner(conn):
                 raise RuntimeError("Demonstration mode refuses to open protected storage (this database has a local owner)")
-    yield
+    # Protected mode starts locked: the encrypted database is opened (and migrated) only by an unlock.
+    sweeper = asyncio.create_task(_sweep_sessions())
+    try:
+        yield
+    finally:
+        sweeper.cancel()
+        with suppress(asyncio.CancelledError):
+            await sweeper
+        auth.reset()
 
 
 app = FastAPI(
-    title="OncoScope local API", version="0.5.0", lifespan=lifespan,
+    title="OncoScope local API", version="0.6.0", lifespan=lifespan,
     description="Local-only prototype. Organizes sources; does not diagnose, stage, or assess clinical response.",
 )
 # Rejects requests whose Host header is not loopback (DNS-rebinding protection for a local service).
@@ -83,9 +98,12 @@ async def access_control(request: Request, call_next):
         actor = session.actor
         request.state.session = session
     marker = current_actor.set(actor)
+    # The encrypted database opens only with the session's key; public routes and locked requests get none.
+    key_marker = database_key.set(request.state.session.db_key if request.state.session else None)
     try:
         return await call_next(request)
     finally:
+        database_key.reset(key_marker)
         current_actor.reset(marker)
 
 
@@ -117,31 +135,41 @@ async def auth_error_handler(_request: Request, exc: auth.AuthError):
     return JSONResponse(status_code=exc.status, content={"detail": exc.detail}, headers=headers)
 
 
+@app.exception_handler(DatabaseLocked)
+async def database_locked_handler(_request: Request, _exc: DatabaseLocked):
+    return JSONResponse(LOCKED, status_code=401, headers={"WWW-Authenticate": "Bearer"})
+
+
+@app.exception_handler(DatabaseRefused)
+async def database_refused_handler(_request: Request, exc: DatabaseRefused):
+    return JSONResponse(status_code=409, content={"detail": exc.message})
+
+
 ENTITY_LABEL = {"sources": "source", "events": "event", "labs": "lab", "treatments": "treatment",
                 "studies": "study", "measurements": "measurement"}
 
 
-def rows(conn: sqlite3.Connection, query: str, args: tuple = ()) -> list[dict]:
+def rows(conn: sqlite.Connection, query: str, args: tuple = ()) -> list[dict]:
     return [dict(r) for r in conn.execute(query, args).fetchall()]
 
 
-def get_patient(conn: sqlite3.Connection, patient_id: int) -> dict:
+def get_patient(conn: sqlite.Connection, patient_id: int) -> dict:
     row = conn.execute("SELECT * FROM patients WHERE id=?", (patient_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Patient record not found")
     return dict(row)
 
 
-def ensure_patient(conn: sqlite3.Connection, patient_id: int) -> None:
+def ensure_patient(conn: sqlite.Connection, patient_id: int) -> None:
     get_patient(conn, patient_id)
 
 
-def ensure_source(conn: sqlite3.Connection, patient_id: int, source_id: int) -> None:
+def ensure_source(conn: sqlite.Connection, patient_id: int, source_id: int) -> None:
     if not conn.execute("SELECT 1 FROM sources WHERE id=? AND patient_id=?", (source_id, patient_id)).fetchone():
         raise HTTPException(422, f"Source #{source_id} must exist and belong to this patient record")
 
 
-def get_record(conn: sqlite3.Connection, entity: str, record_id: int) -> dict:
+def get_record(conn: sqlite.Connection, entity: str, record_id: int) -> dict:
     if entity not in RECORD_TABLES:
         raise HTTPException(404, f"Unknown record type '{entity}'")
     row = conn.execute(f"SELECT * FROM {entity} WHERE id=?", (record_id,)).fetchone()
@@ -150,7 +178,7 @@ def get_record(conn: sqlite3.Connection, entity: str, record_id: int) -> dict:
     return dict(row)
 
 
-def check_references(conn: sqlite3.Connection, table: str, data: dict, record_id: int | None = None) -> None:
+def check_references(conn: sqlite.Connection, table: str, data: dict, record_id: int | None = None) -> None:
     """Cross-record rules the request model alone cannot check."""
     if table != "sources":
         ensure_source(conn, data["patient_id"], data["source_id"])
@@ -167,7 +195,7 @@ def check_references(conn: sqlite3.Connection, table: str, data: dict, record_id
                                      f"letter case. Use '{clash}' so the values stay in one series.")
 
 
-def document_pages(conn: sqlite3.Connection, source: dict) -> list[str]:
+def document_pages(conn: sqlite.Connection, source: dict) -> list[str]:
     """Text pages of a source's attached document, extracted deterministically and cached by hash + extractor."""
     sha, media = source["document_sha256"], source["document_media_type"]
     extractor = documents.extractor_for(media)
@@ -191,7 +219,7 @@ def document_pages(conn: sqlite3.Connection, source: dict) -> list[str]:
     return pages
 
 
-def apply_evidence(conn: sqlite3.Connection, table: str, data: dict) -> dict:
+def apply_evidence(conn: sqlite.Connection, table: str, data: dict) -> dict:
     """Checks an observation's anchor against its source document and resolves exact character offsets."""
     if table not in OBSERVATION_TABLES or not any(data.get(f) is not None for f in ANCHOR_FIELDS):
         return data
@@ -229,7 +257,7 @@ def create(table: str, payload: BaseModel) -> dict:
         data = apply_evidence(conn, table, data)
         try:
             return insert_record(conn, table, data)
-        except sqlite3.IntegrityError as exc:
+        except sqlite.IntegrityError as exc:
             raise HTTPException(409, f"Conflicting or invalid record: {exc}") from exc
 
 
@@ -267,7 +295,7 @@ def correct(entity: str, record_id: int, correction: Correction) -> dict:
             changes["verification_status"] = "entered"
         try:
             return update_record(conn, entity, record_id, changes, correction.reason)
-        except sqlite3.IntegrityError as exc:
+        except sqlite.IntegrityError as exc:
             raise HTTPException(409, f"Conflicting or invalid record: {exc}") from exc
 
 
@@ -281,21 +309,23 @@ def health():
 
 # --- Protected access ---------------------------------------------------------------------------
 
-def record_events(conn: sqlite3.Connection, events: list[tuple[str, dict]]) -> None:
+def record_events(conn: sqlite.Connection, events: list[tuple[str, dict]]) -> None:
     """Security events go into the same hash-chained audit log, with no case and never with any secret in them."""
     for action, detail in events:
         audit(conn, "local_owner", 1, action, detail)
 
 
-def open_session(conn: sqlite3.Connection, result: auth.Unlocked) -> dict:
+def open_session(result: auth.Unlocked) -> dict:
     """Starts the session for a setup/unlock/recovery and returns it. The reply is no-store and shown once: the token
     is kept in UI memory only; a recovery key, when one is issued, must be shown to the owner and is never stored."""
     row = result.owner
     marker = current_actor.set(auth.actor_of(row))
     try:
-        record_events(conn, result.events)
-        token = auth.start_session(row, result.opened)
-        audit(conn, "local_owner", 1, "unlock", {"vault_id": result.opened.doc["vault_id"]})
+        with keyed(result.db_key), connection() as conn:
+            record_events(conn, result.events)
+            token = auth.start_session(row, result.opened, result.db_key)
+            audit(conn, "local_owner", 1, "unlock", {"vault_id": result.opened.doc["vault_id"],
+                                                     "failed_attempts_before_unlock": auth.take_failed_attempts()})
     finally:
         current_actor.reset(marker)
     return {"token": token, "actor": {"id": auth.actor_of(row)[0], "label": row["display_name"]},
@@ -318,33 +348,26 @@ def current_session(request: Request) -> auth.Session:
 
 @app.get("/api/auth/status")
 def auth_status():
-    """Enough for the lock screen; nothing about cases or the owner."""
-    protected = app_mode() == "protected"
-    with connection() as conn:
-        row = auth.owner(conn) if protected else None
-    return {"mode": app_mode(), "setup_required": protected and row is None,
-            "recovery_available": bool(row and row["vault_id"]), "encrypted_at_rest": False}
+    """Enough for the lock screen, decided from the files on disk and never by opening the database."""
+    return auth.status()
 
 
 @app.post("/api/auth/setup", status_code=201)
 def auth_setup(payload: OwnerSetup):
-    with connection() as conn:
-        return open_session(conn, auth.setup(conn, payload.display_name, payload.passphrase))
+    return open_session(auth.setup(payload.display_name, payload.passphrase))
 
 
 @app.post("/api/auth/unlock")
 def auth_unlock(payload: Unlock):
     require_protected("unlock")
-    with connection() as conn:
-        return open_session(conn, auth.unlock(conn, payload.passphrase))
+    return open_session(auth.unlock(payload.passphrase))
 
 
 @app.post("/api/auth/recover")
 def auth_recover(payload: Recover):
     """Recovery key + new passphrase → the same DEK, re-wrapped under the new passphrase, and a new session."""
     require_protected("recover")
-    with connection() as conn:
-        return open_session(conn, auth.recover(conn, payload.recovery_key, payload.new_passphrase))
+    return open_session(auth.recover(payload.recovery_key, payload.new_passphrase))
 
 
 @app.get("/api/vault/status")
@@ -355,8 +378,9 @@ def vault_status(request: Request):
 @app.post("/api/vault/passphrase")
 def vault_change_passphrase(payload: ChangePassphrase, request: Request):
     session = current_session(request)
+    events = auth.change_passphrase(session, payload.current_passphrase, payload.new_passphrase)
     with connection() as conn:
-        record_events(conn, auth.change_passphrase(conn, session, payload.current_passphrase, payload.new_passphrase))
+        record_events(conn, events)
     return {"changed": True, "key_id": session.keys.doc["key_id"]}
 
 
@@ -626,7 +650,7 @@ def extraction_view(row: dict) -> dict:
     return out
 
 
-def get_extraction(conn: sqlite3.Connection, extraction_id: int) -> dict:
+def get_extraction(conn: sqlite.Connection, extraction_id: int) -> dict:
     row = conn.execute("SELECT * FROM extractions WHERE id=?", (extraction_id,)).fetchone()
     if not row:
         raise HTTPException(404, f"Extraction #{extraction_id} not found")
@@ -672,7 +696,7 @@ def list_extractions(patient_id: int, status: str | None = Query(default=None, p
         return [extraction_view(r) for r in rows(conn, query + " ORDER BY source_id, page, start", args)]
 
 
-def _decide(conn: sqlite3.Connection, row: dict, status: str, reason: str | None, accepted: dict | None, record_id: int | None,
+def _decide(conn: sqlite.Connection, row: dict, status: str, reason: str | None, accepted: dict | None, record_id: int | None,
             detail: dict) -> dict:
     conn.execute("""UPDATE extractions SET status=?, decision_reason=?, decided_at=?, accepted_json=?, record_entity=?, record_id=?
                     WHERE id=?""", (status, reason, now_utc(), json.dumps(accepted, sort_keys=True) if accepted else None,
@@ -825,7 +849,7 @@ def audit_verify():
 
 # --- Report and export --------------------------------------------------------------------------
 
-def synthetic_patient(conn: sqlite3.Connection, patient_id: int) -> dict:
+def synthetic_patient(conn: sqlite.Connection, patient_id: int) -> dict:
     patient = get_patient(conn, patient_id)
     if not patient["is_synthetic"]:
         raise HTTPException(403, "Export is limited to synthetic demonstration records in this phase")

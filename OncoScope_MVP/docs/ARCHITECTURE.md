@@ -89,11 +89,32 @@ Every observation (`events`, `labs`, `treatments`, `studies`, `measurements`) ha
 - `/api/audit/verify` also returns the chain head (entries, last id, last hash); backup manifests record it and restore
   compares it. Backups and restores refuse document-store entries that are not hash-named files matching their bytes.
 - The proposed M3 architecture (authentication, SQLCipher, AES-GCM documents, key vault, HMAC audit chain, deletion by
-  crypto-shredding, parser sandbox) is in `M3_SECURITY_ARCHITECTURE.md`; it is not implemented yet.
+  crypto-shredding, parser sandbox) is in `M3_SECURITY_ARCHITECTURE.md`; authentication, the vault and SQLCipher are
+  implemented (M3.1-A/B/C), the rest is not.
+
+## Encrypted database (M3.1-C)
+
+- **Driver:** `app/db.py` uses `sqlcipher3` (SQLCipher 4 bundled) for every connection. Protected connections come only
+  from `open_encrypted(path, key)`. It refuses plaintext, missing or empty files and wrong keys, and sets
+  `cipher_memory_security = OFF`, `temp_store = MEMORY` and `secure_delete = ON`.
+- **Keys:** `db.connection()` takes the key from the `db.database_key` context variable, which the access middleware sets
+  from the session (`Session.db_key`, wiped on end). With no key it raises `DatabaseLocked` (401). Demonstration mode
+  opens its own plain SQLite file and refuses an encrypted one.
+- **Startup:** protected mode starts locked. `auth.storage()` decides `setup`, `locked`, `migration_required`,
+  `migration_interrupted` or `refused` from the vault header and the database file's kind, without opening the
+  database.
+- **Unlock order:** vault → MAC → database key and fingerprint → SQLCipher open → migrations → owner/vault binding check
+  → session. Setup writes the vault `pending`, creates the database, then marks it `encrypted`.
+- **Vault v2:** adds `owner_display_name` and `database` (state, cipher, key fingerprint); v1 is still read. Migration 6
+  drops the retired passphrase verifier.
+- **Migration tool:** `app/encrypt_migrate.py` encrypts plaintext installations (`sqlcipher_export`, a fingerprint
+  comparison, a plaintext scan, an atomic swap, a resumable state file `encrypt-migration.json`).
+- **Backups:** backup and restore copy encrypted databases between connections keyed with the same key.
+- Details: `M3_1C_DATABASE_ENCRYPTION.md`.
 
 ## Key vault (M3.1-B)
 
-- `app/vault.py`: vault format v1 (wraps, MAC, checksum), creation, opening by passphrase or recovery key, re-wrapping,
+- `app/vault.py`: vault format v1, and v2 since M3.1-C (wraps, MAC, checksum), creation, opening by passphrase or recovery key, re-wrapping,
   HKDF purpose keys, atomic verified writes. `app/auth.py` binds it to the owner (migration 5: `local_owner.vault_id`,
   `vault_key_id`), runs setup/unlock/recover/passphrase change, and keeps the opened vault in the session (wiped on end).
 - Backups copy the vault file; restore never replaces a different one. Details: `M3_1B_KEY_VAULT.md`.
@@ -112,18 +133,19 @@ Every observation (`events`, `labs`, `treatments`, `studies`, `measurements`) ha
 
 ## Backup and restore
 
-`app.backup` snapshots SQLite through the backup API, copies the document store and writes `manifest.json`
+`app.backup` snapshots the database through the backup API (an encrypted database into an identically keyed copy, so it
+stays encrypted; that needs the passphrase or recovery key), copies the document store and the vault, and writes `manifest.json`
 (schema version, `PRAGMA integrity_check`, audit-chain verification, per-table row count and SHA-256 of all rows,
-per-document hash check). `app.restore` verifies the backup against its manifest, refuses conflicts in the target
+per-document hash check, and the database encryption and key fingerprint). `app.restore` verifies the backup against its manifest, refuses conflicts in the target
 document store, backs up any existing target first, restores, and compares the restored copy with the manifest.
 
 ## Migrations
 
-`db.MIGRATIONS` is an ordered list of `(version, name, function)`. `init_db()` (run at API start-up and by the seed script) applies
+`db.MIGRATIONS` is an ordered list of `(version, name, function)`. `init_db()` (run at API start-up in demonstration mode, at unlock in protected mode, and by the seed script) applies
 each pending migration in its own transaction, records it in `schema_migrations`, and sets `PRAGMA user_version`. Migration 1 is the
 Phase 1 schema with `IF NOT EXISTS`, so unversioned Phase 1 databases adopt it unchanged; migration 2 adds the M2 columns, backfills
 uids, audit `patient_id`/`reason` and the hash chain, then installs the append-only triggers; migration 3 adds evidence anchors, provenance and the review queue; migration 4
-adds `local_owner` and the audit actor columns (actors are hashed only when present, so earlier entry hashes are unchanged); migration 5 binds the owner to its key vault (`vault_id`, `vault_key_id`). A database newer than the code is
+adds `local_owner` and the audit actor columns (actors are hashed only when present, so earlier entry hashes are unchanged); migration 5 binds the owner to its key vault (`vault_id`, `vault_key_id`); migration 6 drops the M3.1-A passphrase verifier. A database newer than the code is
 refused. Released migrations are never edited; schema changes append a new migration and a test that upgrades an older database.
 
 ## Corrections

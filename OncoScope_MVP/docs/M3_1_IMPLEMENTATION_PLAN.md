@@ -33,6 +33,9 @@ recovery-key display once.
 4. Corrupted vault (flipped byte) → clean, specific error.
 
 ### M3.1-C Encrypted database with migration
+**Status: implemented** (`M3_1C_DATABASE_ENCRYPTION.md`). Deviations: upstream `sqlcipher3` 0.6.4 instead of the PoC wheel;
+the plaintext pre-migration backup is kept and flagged for the owner to retire (no secure-deletion claim, no tombstone);
+the acceptance test passes and the interrupted-migration tests cover every step.
 Scope: replace `sqlite3` with `sqlcipher3` behind `db.connection()`; migration tool `python -m app.encrypt_migrate`.
 Migration strategy (synthetic databases only):
 1. Verify the plaintext DB (integrity check, audit chain, manifest-style table hashes) and make a verified backup.

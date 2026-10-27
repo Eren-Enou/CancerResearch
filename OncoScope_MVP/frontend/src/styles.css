@@ -77,3 +77,4 @@ tr.uncertain td{background:#2a2316}.secondary{background:#223149;color:#e7ecf5;b
 .check-label{display:flex;gap:10px;align-items:flex-start;font-weight:600}.check-label input{width:auto;margin-top:2px}
 .vault-facts{display:grid;grid-template-columns:minmax(140px,220px) 1fr;gap:10px 18px;font-size:13px;margin:16px 0 0}.vault-facts dt{color:#b9c6d6;font-weight:700}.vault-facts dd{margin:0;overflow-wrap:anywhere}.vault-facts ul{margin:0;padding-left:16px}
 @media(max-width:720px){.vault-facts{grid-template-columns:1fr}.vault-facts dd{margin-bottom:6px}}
+.command{background:#0f2225;border:1px solid #2b4f53;border-radius:8px;padding:10px 12px;color:#d9f2ea;font-size:13px;overflow-x:auto;white-space:pre-wrap;word-break:break-all}
