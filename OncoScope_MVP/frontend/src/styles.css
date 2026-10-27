@@ -72,3 +72,8 @@ tr.uncertain td{background:#2a2316}.secondary{background:#223149;color:#e7ecf5;b
 .session-box{display:grid;gap:4px;margin:0 0 16px;padding:11px 12px;background:#16253a;border:1px solid #2f4058;border-radius:8px;color:#e7ecf5;font-weight:600}
 .session-box.demo{background:#2a2316;border-color:#7a5b2e;color:#f1d29a}
 .lock-button{margin-top:6px;background:#223149;border:1px solid #334863;color:#e7ecf5;border-radius:7px;padding:8px 10px;font-size:12px;font-weight:700}.lock-button:hover{background:#324361}
+/* M3.1-B key vault */
+.recovery-panel{width:min(620px,100%)}.recovery-key{display:block;margin:14px 0;padding:16px;background:#f4f1e8;color:#1d2330;border-radius:8px;font-family:ui-monospace,Consolas,monospace;font-size:17px;line-height:1.7;letter-spacing:.06em;word-spacing:.2em;overflow-wrap:anywhere;user-select:all}
+.check-label{display:flex;gap:10px;align-items:flex-start;font-weight:600}.check-label input{width:auto;margin-top:2px}
+.vault-facts{display:grid;grid-template-columns:minmax(140px,220px) 1fr;gap:10px 18px;font-size:13px;margin:16px 0 0}.vault-facts dt{color:#b9c6d6;font-weight:700}.vault-facts dd{margin:0;overflow-wrap:anywhere}.vault-facts ul{margin:0;padding-left:16px}
+@media(max-width:720px){.vault-facts{grid-template-columns:1fr}.vault-facts dd{margin-bottom:6px}}

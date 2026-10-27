@@ -133,13 +133,13 @@ def _check_not_blocked() -> None:
         raise AuthError(429, f"Too many incorrect attempts. Try again in {wait} seconds.", retry_after=wait)
 
 
-def _failed(detail: str) -> AuthError:
+def _failed(detail: str, status: int = 401) -> AuthError:
     global _failures, _blocked_until
     with _lock:
         _failures += 1
         if _failures >= MAX_FAILURES:
             _blocked_until = time.monotonic() + min(LOCKOUT_BASE_SECONDS * 2 ** (_failures - MAX_FAILURES), LOCKOUT_MAX_SECONDS)
-    return AuthError(401, detail)
+    return AuthError(status, detail)
 
 
 def _succeeded() -> None:
@@ -321,7 +321,8 @@ def change_passphrase(conn, session: Session, current: str, new: str) -> list[tu
         try:
             check = vault.open_with_passphrase(doc, current)
         except vault.WrongCredential:
-            raise _failed("The current passphrase is incorrect") from None
+            # 403, not 401: the session itself is valid, and the UI treats 401 as "session ended".
+            raise _failed("The current passphrase is incorrect", status=403) from None
         except vault.VaultError as exc:
             raise vault_error(exc) from None
         same = hmac.compare_digest(bytes(check.dek), bytes(session.keys.dek))

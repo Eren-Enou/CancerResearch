@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react';
 import App from './App';
 import { post, request, setSession, setSessionEndedHandler } from './api';
 import { LockScreen, type SessionInfo } from './components/LockScreen';
+import { RecoveryKeyScreen } from './components/RecoveryKey';
 
-type Status = { mode: 'protected' | 'demo'; setup_required: boolean };
+type Status = { mode: 'protected' | 'demo'; setup_required: boolean; recovery_available?: boolean };
 export type Access = { mode: 'demo' } | { mode: 'protected'; actor: SessionInfo['actor']; onLock: () => void };
 
 const ACTIVITY = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
@@ -18,12 +19,15 @@ export default function Root() {
   const [session, setSessionState] = useState<SessionInfo | null>(null);
   const [notice, setNotice] = useState('');
   const [generation, setGeneration] = useState(0);
+  // A recovery key to show once; held only in this state and dropped on confirmation or when the session ends.
+  const [recoveryKey, setRecoveryKey] = useState<string | null>(null);
 
   const endSession = useCallback((message: string) => {
     setSession(null);
     setSessionState(null);
+    setRecoveryKey(null);
     setNotice(message);
-    setStatus(s => s && { ...s, setup_required: false });
+    setStatus(s => s && { ...s, setup_required: false, recovery_available: true });
   }, []);
 
   useEffect(() => {
@@ -61,7 +65,8 @@ export default function Root() {
   if (error) return <main className="lock-shell"><p className="error-banner" role="alert">{error}</p></main>;
   if (!status) return <main className="lock-shell"><p className="muted" role="status">Connecting to the local server…</p></main>;
   if (status.mode === 'demo') return <App access={{ mode: 'demo' }} />;
-  if (!session) return <LockScreen setupRequired={status.setup_required} notice={notice}
-    onUnlocked={s => { setSession(s.token); setNotice(''); setGeneration(g => g + 1); setSessionState(s); }} />;
+  if (!session) return <LockScreen setupRequired={status.setup_required} recoveryAvailable={status.recovery_available} notice={notice}
+    onUnlocked={s => { setSession(s.token); setNotice(''); setGeneration(g => g + 1); setRecoveryKey(s.recovery_key ?? null); setSessionState({ ...s, token: '', recovery_key: null }); }} />;
+  if (recoveryKey) return <RecoveryKeyScreen recoveryKey={recoveryKey} onConfirmed={() => setRecoveryKey(null)} onLock={() => lock()} />;
   return <App key={generation} access={{ mode: 'protected', actor: session.actor, onLock: () => lock() }} />;
 }

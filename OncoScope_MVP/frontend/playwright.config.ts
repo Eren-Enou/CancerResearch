@@ -10,6 +10,7 @@ process.env.ONCOSCOPE_E2E_DB_M25 ??= join(tmpdir(), `oncoscope-e2e-m25-${stamp}`
 process.env.ONCOSCOPE_E2E_DB_M26 ??= join(tmpdir(), `oncoscope-e2e-m26-${stamp}`, 'oncoscope.sqlite3');
 process.env.ONCOSCOPE_E2E_DB_M31A ??= join(tmpdir(), `oncoscope-e2e-m31a-${stamp}`, 'oncoscope.sqlite3');
 process.env.ONCOSCOPE_E2E_SESSION_SECONDS ??= '45';
+process.env.ONCOSCOPE_E2E_DB_M31B ??= join(tmpdir(), `oncoscope-e2e-m31b-${stamp}`, 'oncoscope.sqlite3');
 const python = process.env.ONCOSCOPE_PYTHON
   ?? (process.platform === 'win32' ? '.venv\\Scripts\\python.exe' : '.venv/bin/python');
 
@@ -46,6 +47,7 @@ export default defineConfig({
     { name: 'm2.5', testMatch: /reconstruction\.spec\.ts/, use: { baseURL: 'http://127.0.0.1:5181' } },
     { name: 'm2.6', testMatch: /fidelity\.spec\.ts/, use: { baseURL: 'http://127.0.0.1:5182', viewport: { width: 1440, height: 900 } } },
     { name: 'm3.1a', testMatch: /protected\.spec\.ts/, use: { baseURL: 'http://127.0.0.1:5183', acceptDownloads: true } },
+    { name: 'm3.1b', testMatch: /vault\.spec\.ts/, use: { baseURL: 'http://127.0.0.1:5184' } },
   ],
   webServer: [
     ...stack(process.env.ONCOSCOPE_E2E_DB_M2, 8010, 5180),
@@ -53,5 +55,6 @@ export default defineConfig({
     ...stack(process.env.ONCOSCOPE_E2E_DB_M26, 8012, 5182),
     ...stack(process.env.ONCOSCOPE_E2E_DB_M31A, 8013, 5183,
       { ONCOSCOPE_MODE: 'protected', ONCOSCOPE_SESSION_MAX_SECONDS: process.env.ONCOSCOPE_E2E_SESSION_SECONDS! }),
+    ...stack(process.env.ONCOSCOPE_E2E_DB_M31B, 8014, 5184, { ONCOSCOPE_MODE: 'protected' }),
   ],
 });

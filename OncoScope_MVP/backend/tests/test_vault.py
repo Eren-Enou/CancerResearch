@@ -322,7 +322,8 @@ def test_changing_the_passphrase(protected):
     dek, key_id = live_dek(), reply["vault"]["key_id"]
     change = lambda current, new: protected.post("/api/vault/passphrase", headers=h(reply),
                                                  json={"current_passphrase": current, "new_passphrase": new})
-    assert change("fictional wrong passphrase", NEW_PASSPHRASE).status_code == 401
+    wrong = change("fictional wrong passphrase", NEW_PASSPHRASE)
+    assert wrong.status_code == 403 and protected.get("/api/patients", headers=h(reply)).status_code == 200
     assert change(PASSPHRASE, PASSPHRASE).status_code == 422
     assert change(PASSPHRASE, "short").status_code == 422
     ok = change(PASSPHRASE, NEW_PASSPHRASE)
