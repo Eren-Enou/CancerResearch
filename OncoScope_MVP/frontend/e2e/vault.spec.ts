@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { readFileSync } from 'node:fs';
 
 // M3.1-B: key vault in the browser — setup, saving the recovery key, lock/unlock, passphrase change, recovery with the
-// recovery key, and the same data key throughout. Fictional data only. Nothing is encrypted with the key yet.
+// recovery key, and the same data key throughout. Fictional data only. (Since M3.1-C the database key comes from it.)
 const FIRST = 'fictional vault passphrase one';
 const SECOND = 'fictional vault passphrase two';
 const THIRD = 'fictional vault passphrase three';
@@ -44,7 +44,7 @@ test('M3.1-B: setup → save recovery key → lock/unlock → change passphrase 
   await expect(page.getByRole('heading', { name: 'Save your recovery key' })).toBeVisible();
   const recoveryKey = (await page.getByTestId('recovery-key').textContent())!;
   expect(recoveryKey).toMatch(/^([A-Z2-7]{4}-){13}[A-Z2-7]{4}$/);
-  await expect(page.getByText('cannot be recovered by anyone', { exact: false })).toBeVisible();
+  await expect(page.getByText('cannot be opened by anyone, including you', { exact: false })).toBeVisible();
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']).catch(() => {});
   await page.getByRole('button', { name: 'Copy recovery key' }).click();
   await expect(page.getByRole('status')).toContainText(/Copied|not available/);
@@ -62,10 +62,11 @@ test('M3.1-B: setup → save recovery key → lock/unlock → change passphrase 
   const vaultText = readFileSync(join(dirname(DB), 'oncoscope-vault.json'), 'utf-8');
   for (const secret of [recoveryKey, recoveryKey.replace(/-/g, ''), FIRST]) expect(vaultText).not.toContain(secret);
 
-  // 2. The Security view shows identifiers only and says nothing is encrypted yet.
+  // 2. The Security view shows identifiers only, the encrypted database, and that documents are not encrypted yet.
   const originalKeyId = await keyId(page);
   expect(originalKeyId).toMatch(/^[0-9a-f]{32}$/);
-  await expect(page.getByText('Not encrypted yet.', { exact: false })).toBeVisible();
+  await expect(page.getByText('Documents are not encrypted yet.', { exact: false })).toBeVisible();
+  await expect(page.getByTestId('database-encryption')).toContainText('Encrypted');
   const fingerprints = await page.getByTestId('derived-keys').textContent();
 
   // 3. Lock and unlock: no recovery key is shown again once confirmed.

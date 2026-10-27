@@ -28,10 +28,10 @@ test('M3.1-A: setup → unlock → protected access → lock → expiry rejectio
   page.on('request', r => { const h = r.headers().authorization; if (h) lastAuthorization = h; });
   const replay = (path: string) => request.get(path, { headers: { Authorization: lastAuthorization } });
 
-  // 1. First protected launch: nothing is reachable before setup, and the screen says nothing is encrypted yet.
+  // 1. First protected launch: nothing is reachable before setup, and the screen says what is (not) encrypted.
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Set up this installation' })).toBeVisible();
-  await expect(page.getByText('does not yet encrypt the database or documents on disk', { exact: false })).toBeVisible();
+  await expect(page.getByText('Original documents are not encrypted yet', { exact: false })).toBeVisible();
   expect((await request.get('/api/patients')).status()).toBe(401);
   await page.getByLabel('Owner name').fill('Fictional E2E Owner');
   await page.getByLabel('Passphrase', { exact: true }).fill(PASSPHRASE);

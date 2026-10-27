@@ -6,12 +6,10 @@ import os
 import sqlite3
 import subprocess
 import sys
-import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from argon2 import PasswordHasher
 from fastapi.testclient import TestClient
 
 from app import auth, credentials, db, encrypt_migrate, vault
@@ -19,7 +17,10 @@ from app.backup import backup, verify_backup
 from app.main import app
 from app.restore import RestoreError, restore
 from app.seed import seed_legacy_plaintext
-from conftest import attach, new_source
+from conftest import FIXTURES, new_source
+
+sys.path.insert(0, str(FIXTURES.parent))
+import legacy_installation as legacy  # noqa: E402  (fixtures/legacy_installation.py, shared with the browser demo)
 
 PASSPHRASE = "fictional encryption passphrase"
 NEW_PASSPHRASE = "another fictional encryption passphrase"
@@ -87,61 +88,20 @@ def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def m31b_installation(path: Path, *, vault_version: int = 1, with_vault: bool = True) -> str | None:
-    """Turns a plaintext v5 database into what M3.1-B left behind: an owner (Argon2id verifier) bound to a v1 vault.
-    `with_vault=False` gives an M3.1-A installation (owner and verifier only). Returns the recovery key."""
-    conn = db._connect(path)
-    uid = str(uuid.uuid4())
-    conn.execute("INSERT INTO local_owner(id, uid, display_name, password_verifier, created_at) VALUES(1,?,?,?,?)",
-                 (uid, "Fictional Owner", PasswordHasher().hash(PASSPHRASE), NOW))
-    recovery_key = None
-    marker = db.current_actor.set((f"owner:{uid}", "Fictional Owner"))
-    try:
-        db.audit(conn, "local_owner", 1, "owner_setup", {"owner_uid": uid})
-        if with_vault:
-            opened, recovery_key = vault.create(uid, PASSPHRASE, NOW, display_name="Fictional Owner", version=vault_version)
-            doc = vault.with_recovery_confirmed(opened, NOW)
-            vault.write(db.vault_path(), doc, opened.dek, replace_existing=False)
-            conn.execute("UPDATE local_owner SET vault_id=?, vault_key_id=? WHERE id=1", (doc["vault_id"], doc["key_id"]))
-            db.audit(conn, "local_owner", 1, "vault_initialized", {"vault_id": doc["vault_id"]})
-        db.audit(conn, "local_owner", 1, "unlock", {})
-    finally:
-        db.current_actor.reset(marker)
-    conn.commit()
-    conn.close()
-    return recovery_key
+def m31b_installation(path: Path, *, with_vault: bool = True) -> str | None:
+    """What M3.1-B (or, without a vault, M3.1-A) left behind on top of a plaintext v5 database. Returns the recovery key."""
+    assert path == db.database_path()
+    return legacy.m31b_owner(PASSPHRASE, with_vault=with_vault)
 
 
 def rich_v5_case(path: Path, monkeypatch) -> dict:
-    """A plaintext v5 database built through the API (documents, evidence anchors, an accepted extraction, corrections,
-    status changes), as M3.1-B's code would have written it. Returns API views to compare after the migration."""
-    migrations, version = db.MIGRATIONS, db.SCHEMA_VERSION
-    monkeypatch.setattr(db, "MIGRATIONS", migrations[:5])
-    monkeypatch.setattr(db, "SCHEMA_VERSION", 5)
-    try:
-        with TestClient(app) as c:
-            pid = c.post("/api/patients", json={"label": "Fictional Encrypted Case SENTINEL-CASE"}).json()["id"]
-            src = new_source(c, pid, "Fictional lab SENTINEL-SOURCE", document="lab_2026-08-07_imaginary_valley.txt", source_date="2026-08-08")
-            lab = c.post("/api/labs", json={"patient_id": pid, "source_id": src["id"], "date": "2026-08-07", "test": "CA-125",
-                                            "value": 310, "unit": "U/mL", "anchor_quote": "CA-125          310      U/mL"}).json()
-            assert c.patch(f"/api/records/labs/{lab['id']}", json={"changes": {"value": 311}, "reason": "Fictional typo"}).status_code == 200
-            assert c.patch(f"/api/records/labs/{lab['id']}", json={"changes": {"value": 310}, "reason": "Fictional re-check"}).status_code == 200
-            assert c.post(f"/api/records/labs/{lab['id']}/status", json={"status": "verified", "reason": "Fictional check"}).status_code == 200
-            other = new_source(c, pid, "Fictional portal copy", document="lab_2026-09-18_portal_copy.txt", source_date="2026-09-19")
-            proposals = c.post(f"/api/sources/{other['id']}/extract").json()["created"]
-            assert c.post(f"/api/extractions/{proposals[0]['id']}/accept", json={"reason": "Fictional review"}).status_code == 200
-            for p in proposals[1:]:
-                c.post(f"/api/extractions/{p['id']}/reject", json={"reason": "Fictional rejection"})
-            c.post("/api/events", json={"patient_id": pid, "source_id": src["id"], "date": "2026-08-09", "kind": "note",
-                                        "title": "Fictional SENTINEL-EVENT", "detail": "Fictional detail"})
-            views = api_views(c, pid, lab["id"], src["id"])
-    finally:
-        monkeypatch.setattr(db, "MIGRATIONS", migrations)
-        monkeypatch.setattr(db, "SCHEMA_VERSION", version)
+    """A plaintext v5 database built through the API as M3.1-B's code wrote it, with the API views to compare later."""
+    monkeypatch.setenv("ONCOSCOPE_MODE", "demo")
+    case = legacy.plaintext_case_v5(lambda c, ids: api_views(c, ids["pid"], ids["lab"], ids["source"]))
     conn = db._connect(path)
     assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
     conn.close()
-    return {"pid": pid, "lab": lab["id"], "source": src["id"], "views": views}
+    return case
 
 
 def api_views(c, pid: int, lab_id: int, source_id: int, headers: dict | None = None) -> dict:
