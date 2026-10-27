@@ -1,10 +1,11 @@
 """M3.1-A protected local access: sessions, lock, rate limiting, foreign origins, audit actors. Fictional data only."""
+import json
 import os
 import re
-import sqlite3
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -12,8 +13,9 @@ import pytest
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
-from app import auth, db
+from app import auth, db, encrypt_migrate, vault
 from app.main import PUBLIC_ROUTES, app
+from app.seed import seed_legacy_plaintext
 from conftest import attach, new_source
 
 PASSPHRASE = "fictional passphrase for tests"
@@ -41,6 +43,18 @@ def unlock(client, passphrase=PASSPHRASE):
 
 def bearer(r) -> dict:
     return {"Authorization": f"Bearer {r.json()['token']}"}
+
+
+def session_key() -> bytearray:
+    [session] = auth._sessions.values()
+    return session.db_key
+
+
+@contextmanager
+def open_db(key=None):
+    """The encrypted database, opened with the live session's key (or a key kept from before locking)."""
+    with db.keyed(key if key is not None else session_key()), db.connection() as conn:
+        yield conn
 
 
 class Authed:
@@ -85,7 +99,9 @@ def test_every_case_data_route_requires_a_session(protected):
         assert r.json() == {"detail": "OncoScope is locked. Unlock it to continue."}
         assert r.headers["www-authenticate"] == "Bearer" and r.headers["cache-control"] == "no-store"
     # The documented public operations say nothing about cases or the owner.
-    assert protected.get("/api/auth/status").json() == {"mode": "protected", "setup_required": False, "recovery_available": True, "encrypted_at_rest": False}
+    assert protected.get("/api/auth/status").json() == {
+        "mode": "protected", "setup_required": False, "recovery_available": True, "storage": "locked", "storage_message": "",
+        "database_encrypted": True, "documents_encrypted": False}
     assert "Fictional" not in protected.get("/api/health").text
 
 
@@ -97,25 +113,28 @@ def test_setup_is_one_time_and_enforces_the_passphrase_policy(protected):
     set_up(protected)
     again = protected.post("/api/auth/setup", json={"display_name": "Fictional Intruder", "passphrase": PASSPHRASE + "x"})
     assert again.status_code == 409
-    with db.connection() as conn:
-        rows = conn.execute("SELECT display_name, password_verifier FROM local_owner").fetchall()
+    with open_db() as conn:
+        rows = conn.execute("SELECT display_name FROM local_owner").fetchall()
         assert [r[0] for r in rows] == ["Fictional Owner"]
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(db.sqlite.IntegrityError):
             conn.execute("DELETE FROM local_owner")
 
 
-def test_only_a_salted_argon2id_verifier_is_stored(protected, tmp_path, monkeypatch):
+def test_only_a_salted_argon2id_wrap_checks_the_passphrase(protected, tmp_path, monkeypatch):
+    """M3.1-A kept an Argon2id verifier in the database; since M3.1-C (migration 6) only the vault's wrap remains."""
     set_up(protected)
-    with db.connection() as conn:
-        first = conn.execute("SELECT password_verifier FROM local_owner").fetchone()[0]
-    assert first.startswith("$argon2id$v=19$m=65536,t=3,p=4$")
-    assert PASSPHRASE.encode() not in Path(os.environ["ONCOSCOPE_DB_PATH"]).read_bytes()
+    with open_db() as conn:
+        columns = [r[1] for r in conn.execute("PRAGMA table_info(local_owner)")]
+    assert "password_verifier" not in columns
+    first = vault.read(db.vault_path())["wraps"]["passphrase"]
+    assert (first["kdf"], first["memory_cost"], first["time_cost"], first["parallelism"]) == ("argon2id", 65536, 3, 4)
+    for path in Path(os.environ["ONCOSCOPE_DB_PATH"]).parent.rglob("*"):
+        assert not path.is_file() or PASSPHRASE.encode() not in path.read_bytes()
     monkeypatch.setenv("ONCOSCOPE_DB_PATH", str(tmp_path / "second" / "oncoscope.sqlite3"))
     with TestClient(app) as other:
         set_up(other)
-        with db.connection() as conn:
-            second = conn.execute("SELECT password_verifier FROM local_owner").fetchone()[0]
-    assert first != second                                            # same passphrase, different salt
+    second = vault.read(db.vault_path())["wraps"]["passphrase"]
+    assert first["salt"] != second["salt"]                           # same passphrase, different salt
 
 
 # 2. Incorrect and expired tokens ---------------------------------------------------------------------------
@@ -248,8 +267,9 @@ def test_every_new_audit_entry_names_the_authenticated_owner(protected):
     assert accepted.status_code == 200, accepted.text
     for p in created[1:]:
         c.post(f"/api/extractions/{p['id']}/reject", json={"reason": "Fictional rejection"})
+    key = bytearray(session_key())
     c.post("/api/auth/lock")
-    with db.connection() as conn:
+    with open_db(key) as conn:
         owner_uid = conn.execute("SELECT uid FROM local_owner").fetchone()[0]
         entries = [dict(r) for r in conn.execute("SELECT * FROM audit_log ORDER BY id")]
         assert db.verify_audit_chain(conn)["valid"]
@@ -261,7 +281,7 @@ def test_every_new_audit_entry_names_the_authenticated_owner(protected):
 def test_the_actor_is_covered_by_the_entry_hash(protected):
     headers = set_up(protected)
     Authed(protected, headers).post("/api/patients", json={"label": "Fictional"})
-    with db.connection() as conn:
+    with open_db() as conn:
         conn.execute("DROP TRIGGER audit_log_no_update")
         conn.execute("UPDATE audit_log SET actor_label='Fictional Someone Else' WHERE action='create'")
         bad_id = conn.execute("SELECT id FROM audit_log WHERE action='create'").fetchone()[0]
@@ -270,10 +290,12 @@ def test_the_actor_is_covered_by_the_entry_hash(protected):
 
 def test_protected_writes_without_an_actor_are_refused(protected):
     set_up(protected)
-    with pytest.raises(RuntimeError, match="authenticated actor"), db.connection() as conn:
+    with pytest.raises(RuntimeError, match="authenticated actor"), open_db() as conn:
         db.insert_record(conn, "patients", {"label": "Fictional unattributed", "is_synthetic": 1})
-    with db.connection() as conn:
+    with open_db() as conn:
         assert conn.execute("SELECT count(*) FROM patients").fetchone()[0] == 0
+    with pytest.raises(db.DatabaseLocked), db.connection():         # and no protected connection exists without a key
+        pass
 
 
 # 7. Downloads and exports -------------------------------------------------------------------------------------
@@ -296,47 +318,53 @@ def test_documents_reports_and_exports_require_a_session(protected):
 # 8. Existing synthetic databases ----------------------------------------------------------------------------
 
 def test_existing_v3_database_and_audit_history_survive_protection(tmp_path, monkeypatch):
+    """A plaintext v3 database (before owners) is refused by the server until encrypt_migrate encrypts it; then its
+    records and audit history are unchanged and every new entry names the owner."""
     path = tmp_path / "legacy" / "oncoscope.sqlite3"
-    path.parent.mkdir()
-    conn = sqlite3.connect(path)
-    conn.row_factory = sqlite3.Row
-    conn.isolation_level = None
-    db.migrate(conn, up_to=3)
-    conn.execute("BEGIN")
-    db.insert_record(conn, "patients", {"label": "Fictional v3 case", "is_synthetic": 1})
-    db.insert_record(conn, "sources", {"patient_id": 1, "label": "Fictional v3 source", "kind": "lab"})
-    db.insert_record(conn, "labs", {"patient_id": 1, "source_id": 1, "date": "2026-07-01", "test": "CA-125", "value": 42, "unit": "U/mL"})
-    conn.execute("COMMIT")
-    before = [dict(r) for r in conn.execute("SELECT * FROM audit_log ORDER BY id")]
-    labs_before = [dict(r) for r in conn.execute("SELECT * FROM labs")]
-    conn.close()
+    monkeypatch.setenv("ONCOSCOPE_DB_PATH", str(path))
+    seed_legacy_plaintext(path, schema_version=3)
+    plain = db._connect(path)
+    before = [dict(r) for r in plain.execute("SELECT * FROM audit_log ORDER BY id")]
+    labs_before = [dict(r) for r in plain.execute("SELECT * FROM labs")]
+    plain.close()
 
     monkeypatch.setenv("ONCOSCOPE_MODE", "protected")
-    monkeypatch.setenv("ONCOSCOPE_DB_PATH", str(path))
     with TestClient(app) as c:
-        assert c.get("/api/patients").status_code == 401                # the existing case is now behind the lock
-        headers = set_up(c)
+        state = c.get("/api/auth/status").json()
+        assert state["storage"] == "migration_required" and state["setup_required"] is False
+        assert c.get("/api/patients").status_code == 401                # the existing case is behind the lock
+        assert unlock(c).status_code == 409                             # and is not opened unencrypted
+        assert c.post("/api/auth/setup", json={"display_name": "Fictional Owner", "passphrase": PASSPHRASE}).status_code == 409
+    assert db.file_kind(path) == "plaintext" and not db.vault_path().exists()
+    answers = {"new_passphrase": PASSPHRASE}
+    result = encrypt_migrate.run(answers.__getitem__, display_name="Fictional Owner")
+    assert result["status"] == "encrypted" and db.file_kind(path) == "encrypted"
+    with TestClient(app) as c:
+        headers = bearer(unlock(c))
         audit = c.get("/api/patients/1/audit", headers=headers).json()
         assert c.get("/api/patients/1/labs", headers=headers).json() == labs_before
-        c.post("/api/labs", headers=headers, json={"patient_id": 1, "source_id": 1, "date": "2026-07-02", "test": "CA-125",
+        c.post("/api/labs", headers=headers, json={"patient_id": 1, "source_id": 2, "date": "2026-07-02", "test": "CA-125",
                                                    "value": 40, "unit": "U/mL"})
         assert c.get("/api/audit/verify", headers=headers).json()["valid"] is True
-    with db.connection() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 5
-        after = [dict(r) for r in conn.execute("SELECT * FROM audit_log ORDER BY id")]
+        with open_db() as conn:
+            assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 6
+            after = [dict(r) for r in conn.execute("SELECT * FROM audit_log ORDER BY id")]
     for old, new in zip(before, after):
         assert {k: new[k] for k in old} == old                          # same rows, same hashes
         assert new["actor_id"] is None and new["actor_label"] is None   # unknown stays unknown
     new = after[len(before):]
-    assert [e["action"] for e in new] == ["owner_setup", "vault_initialized", "recovery_key_issued", "unlock", "create"]
+    assert [e["action"] for e in new] == ["owner_setup", "vault_initialized", "recovery_key_issued",
+                                          "database_encryption_started", "database_encrypted",
+                                          "recovery_key_issued", "unlock", "create"]
     assert {e["actor_label"] for e in new} == {"Fictional Owner"}
+    assert json.loads(new[4]["detail_json"])["source_audit_head"]["entries"] == len(before) + 4
     assert {e["actor_id"] for e in audit if e["id"] <= len(before)} == {None}
 
 
 def test_demonstration_mode_refuses_protected_storage(protected, monkeypatch):
     set_up(protected)
     monkeypatch.setenv("ONCOSCOPE_MODE", "demo")
-    with pytest.raises(RuntimeError, match="refuses to open protected storage"):
+    with pytest.raises(RuntimeError, match="refuses to open an encrypted"):
         with TestClient(app):
             pass
     assert db.DEMO_DB_PATH != db.DEFAULT_DB_PATH and db.DEMO_DB_PATH.parent != db.DEFAULT_DB_PATH.parent
@@ -345,7 +373,9 @@ def test_demonstration_mode_refuses_protected_storage(protected, monkeypatch):
 def test_demonstration_mode_has_no_owner_or_sessions(tmp_path, monkeypatch):
     monkeypatch.setenv("ONCOSCOPE_DB_PATH", str(tmp_path / "demo.sqlite3"))
     with TestClient(app) as demo:
-        assert demo.get("/api/auth/status").json() == {"mode": "demo", "setup_required": False, "recovery_available": False, "encrypted_at_rest": False}
+        assert demo.get("/api/auth/status").json() == {"mode": "demo", "setup_required": False, "recovery_available": False,
+                                                       "storage": "demo", "storage_message": "", "database_encrypted": False,
+                                                       "documents_encrypted": False}
         assert demo.post("/api/auth/setup", json={"display_name": "Fictional", "passphrase": PASSPHRASE}).status_code == 409
         assert unlock(demo).status_code == 409
         demo.post("/api/patients", json={"label": "Fictional demo"})
