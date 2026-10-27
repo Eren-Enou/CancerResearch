@@ -31,6 +31,7 @@ Legend — **Readers**: who/what can read it on a typical single-user Windows/ma
 | 15 | Repository files (public on GitHub) | Code, fictional fixtures; `.claude/launch.json` contains a local Windows user path | **Public** | T9, T16 | Hygiene check (databases, stores, backups, secrets, unlabelled fixtures) | Remove local paths from tracked config; keep repository free of any real data permanently |
 
 | 15a | same DB — `local_owner` (schema v4) | Owner display name; Argon2id passphrase verifier (salted; no passphrase) | as #1 | T1, T4 (offline guessing) | One row, cannot be deleted; Argon2id (64 MiB) | Encrypting the DB does not hide the verifier's purpose; key vault (M3.1-B) |
+| 15c | `backend/data/oncoscope-vault.json` (M3.1-B; also copied into every backup) | Vault id, owner uid, key id, Argon2id/HKDF parameters and salts, AES-GCM-wrapped DEK (twice), MAC; **no plaintext key, passphrase or recovery key** | as #1 | T1, T4 (offline passphrase guessing), T5 | AES-256-GCM wraps; Argon2id 64 MiB; MAC + checksum; atomic verified writes; restore never replaces it | Owner-only permissions (M3.1-F); stronger KDF parameters option |
 | 15b | same DB — `audit_log.actor_id/actor_label` | Who made each change since v4 (owner uid and name, or `demo`) | as #1 | T6, T12 | Covered by the entry hash | Keyed chain (M3.1-E) |
 
 ## 2. In memory and in transit
@@ -45,6 +46,7 @@ Legend — **Readers**: who/what can read it on a typical single-user Windows/ma
 | 21 | Browser history | URLs only: `/api/patients/<id>/report.md`, `#case=<id>&view=…` (ids, no content). Before M3.0, uploads put the **filename** in the URL | Same OS user | T8 | **Fixed in M3.0:** filename moved to `X-Document-Filename` header | — |
 | 21a | Session tokens (M3.1-A) | Bearer token: server memory (keyed by its SHA-256), browser JS memory (`api.ts`), `Authorization` header on loopback HTTP | Same-user processes with debug rights; admin able to sniff loopback | T1, T3 | Never in URLs, storage, cookies or logs (log test); 15 min idle / 8 h max; revoked on lock/restart; foreign origins refused | TLS on loopback is optional; OS-level process isolation |
 | 21b | Passphrase at unlock/setup | Request body on loopback HTTP; transient in server memory during Argon2id | as 21a | T1 | Not logged; validation errors never echo it; only the verifier is stored | as 21a |
+| 21d | DEK and recovery key in memory (M3.1-B) | DEK in the server session (`bytearray`, zeroed on lock/expiry/restart); recovery key in the setup/unlock/recover response body and in React state until confirmed; optionally the clipboard | Same-user malware; clipboard managers; anyone seeing the screen | T1 | Never logged, stored or put in URLs (tests); shown once; UI tells the owner to clear the clipboard | Python cannot guarantee wiping transient copies |
 | 21c | Downloads and opened documents (M3.1-A) | Short-lived `blob:` URLs of authorized responses | Same OS user | T8 | Revoked after use / on unmount; unexpected media types never rendered | — |
 | 22 | Clipboard / print | Whatever the user copies or prints | Other apps; printers | T8 | — | User guidance |
 

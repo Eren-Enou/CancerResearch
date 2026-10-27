@@ -91,6 +91,13 @@ Every observation (`events`, `labs`, `treatments`, `studies`, `measurements`) ha
 - The proposed M3 architecture (authentication, SQLCipher, AES-GCM documents, key vault, HMAC audit chain, deletion by
   crypto-shredding, parser sandbox) is in `M3_SECURITY_ARCHITECTURE.md`; it is not implemented yet.
 
+## Key vault (M3.1-B)
+
+- `app/vault.py`: vault format v1 (wraps, MAC, checksum), creation, opening by passphrase or recovery key, re-wrapping,
+  HKDF purpose keys, atomic verified writes. `app/auth.py` binds it to the owner (migration 5: `local_owner.vault_id`,
+  `vault_key_id`), runs setup/unlock/recover/passphrase change, and keeps the opened vault in the session (wiped on end).
+- Backups copy the vault file; restore never replaces a different one. Details: `M3_1B_KEY_VAULT.md`.
+
 ## Protected access (M3.1-A)
 
 - `app/auth.py`: single local owner (`local_owner`, Argon2id verifier from `argon2-cffi`), in-memory sessions keyed by
@@ -116,7 +123,7 @@ document store, backs up any existing target first, restores, and compares the r
 each pending migration in its own transaction, records it in `schema_migrations`, and sets `PRAGMA user_version`. Migration 1 is the
 Phase 1 schema with `IF NOT EXISTS`, so unversioned Phase 1 databases adopt it unchanged; migration 2 adds the M2 columns, backfills
 uids, audit `patient_id`/`reason` and the hash chain, then installs the append-only triggers; migration 3 adds evidence anchors, provenance and the review queue; migration 4
-adds `local_owner` and the audit actor columns (actors are hashed only when present, so earlier entry hashes are unchanged). A database newer than the code is
+adds `local_owner` and the audit actor columns (actors are hashed only when present, so earlier entry hashes are unchanged); migration 5 binds the owner to its key vault (`vault_id`, `vault_key_id`). A database newer than the code is
 refused. Released migrations are never edited; schema changes append a new migration and a test that upgrades an older database.
 
 ## Corrections

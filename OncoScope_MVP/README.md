@@ -1,4 +1,4 @@
-# OncoScope — Phase 1 local prototype (M3.1-A: protected local access; synthetic data only)
+# OncoScope — Phase 1 local prototype (M3.1-B: key vault and recovery; synthetic data only)
 
 **Status:** Source-linked medical-record organizer built with synthetic data only. Not a medical device or an oncology decision-support tool.
 
@@ -7,6 +7,12 @@
 This repository is intentionally narrow in scope: a **FastAPI + SQLite API and a React + TypeScript dashboard**. It does not contain medical scans, a real patient's information, machine learning, RECIST response logic, or molecular simulation.
 
 ## What's implemented
+
+**M3.1-B — key vault and recovery** (`docs/M3_1B_KEY_VAULT.md`). A protected installation has a local key vault: a
+random 256-bit data key wrapped with AES-256-GCM under an Argon2id key from the passphrase and, separately, under a
+recovery key shown once at setup. Recover with the recovery key, change the passphrase, and the data key stays the
+same; damaged, missing, replaced or half-written vaults are refused, never regenerated. **The data key does not
+encrypt anything yet** (M3.1-C/D).
 
 **M3.1-A — protected local access and audit identity** (`docs/M3_1A_PROTECTED_ACCESS.md`). **Records are still not
 encrypted at rest**; anyone who can read `backend/data/` can read them without the passphrase.
@@ -154,16 +160,16 @@ npm install && npm run dev
 
 ```powershell
 cd OncoScope_MVP\backend
-python -m pytest -q                 # 135 passed + 2 expected failures (plaintext at rest, audit tail truncation)
+python -m pytest -q                 # 174 passed + 2 expected failures (plaintext at rest, audit tail truncation)
 python -m app.benchmark             # extraction benchmark against the fictional ground truth (add --holdout for the held-out set)
 
 cd ..\frontend
 npm run build                       # strict TypeScript + production build
-npm test                            # Vitest component/unit tests (40, incl. WCAG contrast and the lock screen)
-npm run test:e2e                    # Playwright: M2, M2.5, M2.6 (demonstration mode) and M3.1-A (protected mode)
+npm test                            # Vitest component/unit tests (45, incl. WCAG contrast, lock and recovery screens)
+npm run test:e2e                    # Playwright: M2, M2.5, M2.6 (demonstration mode), M3.1-A and M3.1-B (protected mode)
 ```
 
-`npm run test:e2e` starts four isolated stacks (API 8010–8013 + Vite 5180–5183 for M2, M2.5, M2.6 in demonstration mode and M3.1-A in protected mode with a 45-second session lifetime), each on a **new empty database** in the OS temp directory, then drives the UI. The M2.6 run saves screenshots to `docs/screenshots/`. The M2.5 run also calls the backup/restore CLI and the report audit script. It uses the installed Microsoft Edge (`PW_CHANNEL=chrome` to use Chrome instead; on non-Windows set `ONCOSCOPE_PYTHON` if the venv is elsewhere). No browser download is needed.
+`npm run test:e2e` starts five isolated stacks (API 8010–8014 + Vite 5180–5184 for M2, M2.5, M2.6 in demonstration mode, M3.1-A in protected mode with a 45-second session lifetime, and M3.1-B in protected mode), each on a **new empty database** in the OS temp directory, then drives the UI. The M2.6 run saves screenshots to `docs/screenshots/`. The M2.5 run also calls the backup/restore CLI and the report audit script. It uses the installed Microsoft Edge (`PW_CHANNEL=chrome` to use Chrome instead; on non-Windows set `ONCOSCOPE_PYTHON` if the venv is elsewhere). No browser download is needed.
 
 ## User workflow
 
@@ -184,7 +190,10 @@ For the document-centred M2.5 workflow follow `docs/WALKTHROUGH_M2_5.md`. The ge
 | GET | `/api/health` | Local API health, schema version and mode (no session needed) |
 | GET | `/api/auth/status` | Mode and whether owner setup is needed (no session needed) |
 | POST | `/api/auth/setup` / `/api/auth/unlock` | Create the local owner (once) / unlock; both return a session token |
-| POST | `/api/auth/lock` | Revoke the current session |
+| POST | `/api/auth/lock` | Revoke the current session (and drop its data key from memory) |
+| POST | `/api/auth/recover` | Recovery key + new passphrase → same data key, new session (no session needed; rate limited) |
+| GET | `/api/vault/status` | Vault identifiers, KDF settings, derived-key fingerprints (never keys) |
+| POST | `/api/vault/passphrase` / `/api/vault/recovery-key/confirm` | Change the passphrase / confirm the recovery key was saved |
 | GET / POST | `/api/patients` | List / create fictional cases (always synthetic) |
 | GET | `/api/patients/{id}/dashboard` | Patient metadata and counts |
 | GET / POST | `/api/patients/{id}/sources` / `/api/sources` | Register source documents |

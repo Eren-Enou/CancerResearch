@@ -23,6 +23,8 @@ Acceptance criteria / failure scenarios (all automated):
 7. API refuses to bind a non-loopback host without an explicit override flag (test with `0.0.0.0`).
 
 ### M3.1-B Key vault and recovery key
+**Status: implemented** (`M3_1B_KEY_VAULT.md`). Vault file `oncoscope-vault.json` (not `keys.json`); criteria 1–4 are
+automated in `backend/tests/test_vault.py`; the integration requirements for C/D/E are in that document.
 Scope: `keys.json` (Argon2id params + salt, DEK wrapped by passphrase and by recovery key), HKDF subkeys, passphrase change,
 recovery-key display once.
 1. Vault contains no plaintext key material (scan file for the DEK bytes → absent).
