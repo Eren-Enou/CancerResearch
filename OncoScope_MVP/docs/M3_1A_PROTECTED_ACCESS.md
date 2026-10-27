@@ -121,7 +121,7 @@ belong to later increments.
 3. **Offline guessing.** The rate limit lives in server memory, so restarting the server resets it. Anyone with the
    database file can also try passphrases against the verifier offline at Argon2id speed. The 12-character minimum is a
    policy, not a strength check.
-4. **No passphrase change or recovery** yet (M3.1-B). A forgotten passphrase locks the owner out of the app, although
+4. ~~No passphrase change or recovery~~ — **added in M3.1-B** (`M3_1B_KEY_VAULT.md`). Originally: A forgotten passphrase locks the owner out of the app, although
    the files stay readable on disk.
 5. **Loopback traffic is unencrypted HTTP.** An administrator able to capture loopback traffic can see the passphrase
    at unlock and the token on every request.

@@ -20,8 +20,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from .backup import backup, build_manifest, compare_manifests, verify_backup
-from .db import database_path, document_dir
+from .backup import VAULT_FILE, backup, build_manifest, compare_manifests, verify_backup
+from .db import database_path, document_dir, vault_path
 
 
 class RestoreError(RuntimeError):
@@ -34,6 +34,12 @@ def restore(backup_dir: Path, target_db: Path | None = None, target_docs: Path |
         raise RestoreError("Backup failed verification; nothing was restored: " + "; ".join(check["problems"]))
     target_db = target_db or database_path()
     target_docs = target_docs or (document_dir() if target_db == database_path() else target_db.parent / "documents")
+    target_vault = vault_path() if target_db == database_path() else target_db.parent / VAULT_FILE
+    source_vault = backup_dir / VAULT_FILE
+    if source_vault.exists() and target_vault.exists() and target_vault.read_bytes() != source_vault.read_bytes():
+        # Never replace a key vault: the target's may protect data this backup does not contain.
+        raise RestoreError(f"The target already has a different key vault ({target_vault}); nothing was restored. "
+                           "Restore into an empty folder, or move that vault away deliberately.")
 
     conflicts = []
     source_docs = backup_dir / "documents"
@@ -66,7 +72,10 @@ def restore(backup_dir: Path, target_db: Path | None = None, target_docs: Path |
             shutil.copy2(f, destination)
             copied += 1
 
-    differences = compare_manifests(check["manifest"], build_manifest(target_db, target_docs))
+    if source_vault.exists() and not target_vault.exists():
+        target_vault.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_vault, target_vault)
+    differences = compare_manifests(check["manifest"], build_manifest(target_db, target_docs, target_vault))
     return {"restored_to": str(target_db), "documents_dir": str(target_docs), "documents_copied": copied,
             "preserved_previous": str(preserved) if preserved else None, "consistent": not differences,
             "differences": differences, "tables": {t: v["rows"] for t, v in check["manifest"]["tables"].items()}}

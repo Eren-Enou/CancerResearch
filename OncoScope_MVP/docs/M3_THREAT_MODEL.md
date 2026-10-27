@@ -28,7 +28,7 @@ Likelihood (L) and impact (I) are rated 1–3 for a future real-data deployment;
 | ID | Threat | L | I | P | Existing controls | Gap → planned mitigation |
 |---|---|---|---|---|---|---|
 | T1 | Any same-user process reads or changes all cases via the API or the files | 3 | 3 | **9** | Loopback bind; Host check; **M3.1-A: API requires an owner-passphrase session in protected mode** | Files are still plaintext, so the lock is bypassed by reading them directly → passphrase-derived key and encryption (M3.1 B, C) |
-| T4 | Lost/stolen device exposes database, documents, caches, exports | 2 | 3 | **6** | none in-app (OS disk encryption is the user's) | Encryption at rest of DB + documents; require OS disk encryption for real data (M3.1 B, C) |
+| T4 | Lost/stolen device exposes database, documents, caches, exports | 2 | 3 | **6** | none in-app (OS disk encryption is the user's); **M3.1-B: recoverable key vault exists, not yet used** | Encryption at rest of DB + documents with vault-derived keys (M3.1 C, D); require OS disk encryption for real data |
 | T5 | Backup theft (USB/cloud copy) | 2 | 3 | **6** | Manifest verification | Encrypted backups with independent restore test (M3.1 D) |
 | T12 | Changes cannot be attributed to a person | 3 | 2 | **6** | Audit log records what/when/why; **M3.1-A: authenticated local owner on every new entry** (older entries: unknown) | Identity is self-declared and single-user; CLI backup/restore are unattributed |
 | T13 | Data cannot be deleted (append-only audit keeps old values; no deletion endpoint) | 3 | 2 | **6** | — (by design so far) | Crypto-shredding design: per-case keys; delete key + purge caches (design in M3_SECURITY_ARCHITECTURE §7; M3.2) |

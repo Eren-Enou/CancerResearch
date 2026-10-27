@@ -42,6 +42,11 @@ def document_dir() -> Path:
     return Path(os.environ.get("ONCOSCOPE_DOCUMENT_DIR", str(database_path().parent / "documents"))).expanduser()
 
 
+def vault_path() -> Path:
+    """The key vault (M3.1-B), beside the database by default. Demonstration mode never reads or writes it."""
+    return Path(os.environ.get("ONCOSCOPE_VAULT_PATH", str(database_path().parent / "oncoscope-vault.json"))).expanduser()
+
+
 def now_utc() -> str:
     """System timestamps are UTC with an explicit Z; clinical dates stay calendar dates."""
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -218,11 +223,19 @@ def _m4_local_owner_and_audit_actor(conn: sqlite3.Connection) -> None:
         conn.execute(f"ALTER TABLE audit_log ADD COLUMN {column}")
 
 
+def _m5_vault_binding(conn: sqlite3.Connection) -> None:
+    # Which vault and DEK this installation uses. Set once the vault is written and verified; while NULL the next unlock
+    # creates (or adopts) the vault. Once set, a missing or different vault is refused, never silently replaced.
+    for column in ("vault_id TEXT", "vault_key_id TEXT"):
+        conn.execute(f"ALTER TABLE local_owner ADD COLUMN {column}")
+
+
 MIGRATIONS: list[tuple[int, str, Callable[[sqlite3.Connection], None]]] = [
     (1, "phase1 baseline schema", _m1_phase1_baseline),
     (2, "record uids, revisions, verification status, source documents, hash-chained audit", _m2_provenance_and_audit),
     (3, "evidence anchors, provenance, extraction review queue, document text cache", _m3_evidence_and_extraction),
     (4, "local owner verifier, audit actor", _m4_local_owner_and_audit_actor),
+    (5, "key vault binding", _m5_vault_binding),
 ]
 SCHEMA_VERSION = MIGRATIONS[-1][0]
 

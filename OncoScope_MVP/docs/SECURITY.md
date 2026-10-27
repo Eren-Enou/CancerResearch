@@ -6,6 +6,12 @@ No real names, dates of birth, patient IDs, pathology records, medical images, s
 
 The app does **not** provide user login, per-user authorization, encryption-at-rest, encrypted backup, cloud synchronization, file ingestion safety checks, or a patient permission workflow. It should not be deployed to Vercel, hosted on a home LAN, or shared publicly. Even on localhost, other software running under the same operating-system account might access its local database.
 
+## M3.1-B key vault
+A random 256-bit data key (DEK) in `oncoscope-vault.json`, wrapped with AES-256-GCM under Argon2id(passphrase) and under
+HKDF(recovery key) (argon2-cffi, pyca/cryptography; no custom algorithms). Recovery, passphrase change, atomic verified
+writes, refusal of damaged/missing/replaced vaults, DEK wiped from session memory on lock. **The DEK encrypts nothing
+yet.** Details and remaining risks: `M3_1B_KEY_VAULT.md`.
+
 ## M3.1-A protected local access
 Protected mode (default) requires an owner-passphrase session for every case-data API request; new audit entries name
 the owner; foreign origins and non-loopback peers are refused; the UI locks and discards case data on lock, inactivity,

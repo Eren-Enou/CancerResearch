@@ -199,3 +199,15 @@ class OwnerSetup(BaseModel):
 class Unlock(BaseModel):
     model_config = ConfigDict(extra="forbid")
     passphrase: str = Field(min_length=1, max_length=1024)
+
+
+class Recover(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    recovery_key: str = Field(min_length=1, max_length=200)
+    new_passphrase: str = Field(max_length=1024)
+
+
+class ChangePassphrase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    current_passphrase: str = Field(min_length=1, max_length=1024)
+    new_passphrase: str = Field(max_length=1024)

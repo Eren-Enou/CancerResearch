@@ -85,7 +85,7 @@ def test_every_case_data_route_requires_a_session(protected):
         assert r.json() == {"detail": "OncoScope is locked. Unlock it to continue."}
         assert r.headers["www-authenticate"] == "Bearer" and r.headers["cache-control"] == "no-store"
     # The documented public operations say nothing about cases or the owner.
-    assert protected.get("/api/auth/status").json() == {"mode": "protected", "setup_required": False, "encrypted_at_rest": False}
+    assert protected.get("/api/auth/status").json() == {"mode": "protected", "setup_required": False, "recovery_available": True, "encrypted_at_rest": False}
     assert "Fictional" not in protected.get("/api/health").text
 
 
@@ -322,12 +322,14 @@ def test_existing_v3_database_and_audit_history_survive_protection(tmp_path, mon
                                                    "value": 40, "unit": "U/mL"})
         assert c.get("/api/audit/verify", headers=headers).json()["valid"] is True
     with db.connection() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 4
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 5
         after = [dict(r) for r in conn.execute("SELECT * FROM audit_log ORDER BY id")]
     for old, new in zip(before, after):
         assert {k: new[k] for k in old} == old                          # same rows, same hashes
         assert new["actor_id"] is None and new["actor_label"] is None   # unknown stays unknown
-    assert [e["actor_label"] for e in after[len(before):]] == ["Fictional Owner"] * 3   # setup, unlock, new lab
+    new = after[len(before):]
+    assert [e["action"] for e in new] == ["owner_setup", "vault_initialized", "recovery_key_issued", "unlock", "create"]
+    assert {e["actor_label"] for e in new} == {"Fictional Owner"}
     assert {e["actor_id"] for e in audit if e["id"] <= len(before)} == {None}
 
 
@@ -343,7 +345,7 @@ def test_demonstration_mode_refuses_protected_storage(protected, monkeypatch):
 def test_demonstration_mode_has_no_owner_or_sessions(tmp_path, monkeypatch):
     monkeypatch.setenv("ONCOSCOPE_DB_PATH", str(tmp_path / "demo.sqlite3"))
     with TestClient(app) as demo:
-        assert demo.get("/api/auth/status").json() == {"mode": "demo", "setup_required": False, "encrypted_at_rest": False}
+        assert demo.get("/api/auth/status").json() == {"mode": "demo", "setup_required": False, "recovery_available": False, "encrypted_at_rest": False}
         assert demo.post("/api/auth/setup", json={"display_name": "Fictional", "passphrase": PASSPHRASE}).status_code == 409
         assert unlock(demo).status_code == 409
         demo.post("/api/patients", json={"label": "Fictional demo"})

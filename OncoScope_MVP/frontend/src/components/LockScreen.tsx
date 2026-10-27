@@ -1,14 +1,17 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiError, post } from '../api';
+import { RecoverForm } from './RecoveryKey';
 
-export type SessionInfo = { token: string; actor: { id: string; label: string }; idle_seconds: number; max_seconds: number };
+export type SessionInfo = { token: string; actor: { id: string; label: string }; idle_seconds: number; max_seconds: number;
+  vault?: { key_id: string; recovery_confirmed: boolean }; recovery_key?: string | null };
 
-type Props = { setupRequired: boolean; notice: string; onUnlocked: (session: SessionInfo) => void };
+type Props = { setupRequired: boolean; recoveryAvailable?: boolean; notice: string; onUnlocked: (session: SessionInfo) => void };
 
 const MIN_PASSPHRASE = 12;
 
 /** First-launch owner setup, or unlocking. Shows no case information; nothing is loaded until a session exists. */
-export function LockScreen({ setupRequired, notice, onUnlocked }: Props) {
+export function LockScreen({ setupRequired, recoveryAvailable = false, notice, onUnlocked }: Props) {
+  const [recovering, setRecovering] = useState(false);
   const [name, setName] = useState('');
   const [passphrase, setPassphrase] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -45,12 +48,12 @@ export function LockScreen({ setupRequired, notice, onUnlocked }: Props) {
   return <main className="lock-shell">
     <section className="panel lock-panel" aria-labelledby="lock-title">
       <div className="brand"><div className="brand-mark" aria-hidden="true">◎</div><div><strong>ONCOSCOPE</strong><span>PROTECTED LOCAL WORKSPACE</span></div></div>
-      <h1 id="lock-title">{setupRequired ? 'Set up this installation' : 'OncoScope is locked'}</h1>
+      <h1 id="lock-title">{setupRequired ? 'Set up this installation' : recovering ? 'Recover access' : 'OncoScope is locked'}</h1>
       {notice && <p className="lock-notice" role="status">{notice}</p>}
       <p className="muted">{setupRequired
-        ? 'Create the local owner. Every change you make will be recorded under this name. There is no account recovery yet: if you forget the passphrase, the case data cannot be opened through OncoScope.'
-        : 'Enter the owner passphrase to open your cases.'}</p>
-      <form onSubmit={submit} className="lock-form" noValidate>
+        ? 'Create the local owner. Every change you make will be recorded under this name. Next you will get a recovery key: the only other way in if you forget the passphrase.'
+        : recovering ? 'Enter the recovery key you saved and choose a new passphrase. Your data key stays the same.' : 'Enter the owner passphrase to open your cases.'}</p>
+      {recovering ? <RecoverForm onRecovered={onUnlocked} onCancel={() => setRecovering(false)} /> : <form onSubmit={submit} className="lock-form" noValidate>
         {setupRequired && <label>Owner name<input ref={first} value={name} onChange={e => setName(e.target.value)} autoComplete="username" required maxLength={80} /></label>}
         <label>Passphrase<input ref={setupRequired ? undefined : first} type="password" value={passphrase} onChange={e => setPassphrase(e.target.value)}
           autoComplete={setupRequired ? 'new-password' : 'current-password'} required aria-describedby={setupRequired ? 'passphrase-help' : undefined} /></label>
@@ -58,7 +61,8 @@ export function LockScreen({ setupRequired, notice, onUnlocked }: Props) {
           <label>Repeat passphrase<input type="password" value={confirm} onChange={e => setConfirm(e.target.value)} autoComplete="new-password" required /></label></>}
         {error && <p className="error" role="alert">{error}</p>}
         <button type="submit" className="primary" disabled={busy}>{busy ? 'Checking…' : setupRequired ? 'Create owner and unlock' : 'Unlock'}</button>
-      </form>
+        {!setupRequired && recoveryAvailable && <button type="button" className="text-button" onClick={() => setRecovering(true)}>Forgot the passphrase? Use your recovery key</button>}
+      </form>}
       <div className="integrity-note"><strong>What this protects</strong>
         <p>The lock stops OncoScope's own server from showing or changing case data without your passphrase. It does <b>not</b> yet encrypt the database or documents on disk: anyone who can read those files can still read them. Use fictional data only.</p></div>
     </section>

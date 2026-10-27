@@ -10,12 +10,13 @@ import { ReviewQueue } from './components/ReviewQueue';
 import { LabChart } from './components/LabChart';
 import { AuditView, SourceReference, SourcesView } from './components/Panels';
 import { RecordTools, StatusBadge } from './components/RecordTools';
+import { SecurityView } from './components/SecurityView';
 import { formatDifference, formatNumber, provenanceLabel } from './records';
 import type { AnchorDraft, DocFocus, Evidence, Extraction, AnyRecord, Comparison, Counts, Entity, Event, Lab, LabSeries, Measurement, Patient, Source, Study, TimelineEntry, Treatment } from './types';
 
-type View = 'Overview' | 'History' | 'Timeline' | 'Laboratory' | 'Imaging' | 'Documents' | 'Review' | 'Evidence' | 'Sources' | 'Audit' | 'Add record';
-const views: View[] = ['Overview', 'History', 'Timeline', 'Laboratory', 'Imaging', 'Documents', 'Review', 'Evidence', 'Sources', 'Audit', 'Add record'];
-const icons = ['◫', '◷', '≡', '⌁', '▧', '▯', '✓', '⚑', '▤', '⎘', '+'];
+type View = 'Overview' | 'History' | 'Timeline' | 'Laboratory' | 'Imaging' | 'Documents' | 'Review' | 'Evidence' | 'Sources' | 'Audit' | 'Add record' | 'Security';
+const views: View[] = ['Overview', 'History', 'Timeline', 'Laboratory', 'Imaging', 'Documents', 'Review', 'Evidence', 'Sources', 'Audit', 'Add record', 'Security'];
+const icons = ['◫', '◷', '≡', '⌁', '▧', '▯', '✓', '⚑', '▤', '⎘', '+', '⚿'];
 
 /** The selected case and view live in the URL hash (e.g. #case=3&view=History) so a reload keeps the user's place. */
 function readHash(): { view: View; caseId: number | null } {
@@ -147,12 +148,12 @@ export default function App({ access }: { access: Access }) {
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">◎</div><div><strong>ONCOSCOPE</strong><span>LOCAL RESEARCH WORKSPACE</span></div></div>
       <p className="nav-label">WORKSPACE</p>
-      <nav aria-label="Main navigation">{views.map((v, i) => <button className={`nav-item ${view === v ? 'active' : ''}`} aria-current={view === v ? 'page' : undefined} key={v} onClick={() => { setView(v); setAnchorDraft(null); }}><span className="nav-icon" aria-hidden="true">{icons[i]}</span>{v}{v === 'Review' && pendingReviews > 0 && <span className="nav-count" aria-hidden="true">{pendingReviews}</span>}</button>)}</nav>
+      <nav aria-label="Main navigation">{views.map((v, i) => (v === 'Security' && access.mode !== 'protected') ? null : <button className={`nav-item ${view === v ? 'active' : ''}`} aria-current={view === v ? 'page' : undefined} key={v} onClick={() => { setView(v); setAnchorDraft(null); }}><span className="nav-icon" aria-hidden="true">{icons[i]}</span>{v}{v === 'Review' && pendingReviews > 0 && <span className="nav-count" aria-hidden="true">{pendingReviews}</span>}</button>)}</nav>
       <div className="sidebar-footer">
         {access.mode === 'protected'
           ? <div className="session-box" data-testid="session-box"><span className="tiny muted">Signed in as</span> <strong>{access.actor.label}</strong></div>
           : <div className="session-box demo" data-testid="demo-banner"><strong>Demonstration mode</strong><span className="tiny">Fictional data only, no sign-in. Protected storage is not available here.</span></div>}
-        <span className="local-dot" /> Local-only prototype<p>Phase 1 · M3.1-A · v0.4.0<br />Not encrypted at rest · No automated interpretation</p></div>
+        <span className="local-dot" /> Local-only prototype<p>Phase 1 · M3.1-B · v0.5.0<br />Not encrypted at rest · No automated interpretation</p></div>
     </aside>
     <main className="main">
       <header className="topbar"><div><div className="eyebrow">CLINICAL RECORDS / {view.toUpperCase()}</div><h1>{view === 'Overview' ? 'Patient overview' : view === 'History' ? 'Case history' : view}</h1></div>
@@ -162,7 +163,8 @@ export default function App({ access }: { access: Access }) {
             <button type="button" onClick={() => save('export.json', 'export.json')} className="export-link">Export JSON</button></>}</div></header>
       <div className="body-content">
         {error && <div className="error-banner" role="alert">{error}.</div>}
-        {loaded && !patient && <section className="panel empty"><h2>No case yet</h2><p className="muted">This local database is empty. Create a fictional case to begin entering synthetic sources and observations.</p>
+        {view === 'Security' && access.mode === 'protected' && <SecurityView />}
+        {loaded && !patient && view !== 'Security' && <section className="panel empty"><h2>No case yet</h2><p className="muted">This local database is empty. Create a fictional case to begin entering synthetic sources and observations.</p>
           <CreateCase onCreated={id => { setPatientId(id); reload(); setView('Add record'); }} /></section>}
         {patient && <>
           <div className="patient-strip"><div><span className="strip-label">CURRENT RECORD</span><strong>{patient.label}</strong><span className="strip-description">ID #{patient.id} · Synthetic dataset</span></div>
@@ -223,7 +225,7 @@ export default function App({ access }: { access: Access }) {
                 {(['sources', 'events', 'labs', 'treatments', 'studies', 'measurements', 'audit_log'] as const).map(e => <button type="button" key={e} className="export-link" onClick={() => save(`export/${e}.csv`, `${e}.csv`)}>{e}.csv</button>)}</div>
               <details className="new-case"><summary>Create another fictional case</summary><CreateCase onCreated={id => { setPatientId(id); reload(); }} /></details></section></>}
         </>}
-        <footer className="footer">OncoScope 0.4.0 · Local-first prototype · Not for clinical decisions · Verify every observation against original documentation</footer>
+        <footer className="footer">OncoScope 0.5.0 · Local-first prototype · Not for clinical decisions · Verify every observation against original documentation</footer>
       </div>
     </main>
   </div>;

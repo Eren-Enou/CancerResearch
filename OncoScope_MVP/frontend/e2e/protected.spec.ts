@@ -37,6 +37,11 @@ test('M3.1-A: setup → unlock → protected access → lock → expiry rejectio
   await page.getByLabel('Passphrase', { exact: true }).fill(PASSPHRASE);
   await page.getByLabel('Repeat passphrase').fill(PASSPHRASE);
   await page.getByRole('button', { name: 'Create owner and unlock' }).click();
+  // M3.1-B: the recovery key is shown once and must be confirmed before the workspace opens.
+  const recoveryKey = (await page.getByTestId('recovery-key').textContent())!;
+  await page.getByLabel('I have saved this recovery key somewhere safe').check();
+  await page.getByLabel(/Type the last group/).fill(recoveryKey.slice(-4));
+  await page.getByRole('button', { name: 'Continue to OncoScope' }).click();
   await expect(page.getByTestId('session-box')).toContainText('Fictional E2E Owner');
 
   // 2. Protected work through authorized requests: case, document import, rendered PDF, review, export, audit.
