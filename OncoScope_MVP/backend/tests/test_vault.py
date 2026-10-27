@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -63,9 +64,25 @@ def status(c, reply) -> dict:
     return r.json()
 
 
+def new_vault(**kw):
+    return vault.create("owner-uid", PASSPHRASE, NOW, display_name="Fictional Owner", **kw)
+
+
 def live_dek() -> bytes:
     [session] = auth._sessions.values()
     return bytes(session.keys.dek)
+
+
+def session_key() -> bytearray:
+    [session] = auth._sessions.values()
+    return session.db_key
+
+
+@contextmanager
+def open_db():
+    """The encrypted database, opened with the live session's key (as the API does for a request)."""
+    with db.keyed(session_key()), db.connection() as conn:
+        yield conn
 
 
 def vault_file() -> Path:
@@ -73,12 +90,12 @@ def vault_file() -> Path:
 
 
 def owner_row() -> dict:
-    with db.connection() as conn:
+    with open_db() as conn:
         return dict(conn.execute("SELECT * FROM local_owner").fetchone())
 
 
 def actions() -> list[str]:
-    with db.connection() as conn:
+    with open_db() as conn:
         return [r[0] for r in conn.execute("SELECT action FROM audit_log ORDER BY id")]
 
 
@@ -89,7 +106,7 @@ def flip(data: bytes, at: int) -> bytes:
 # 1-5. The vault itself -------------------------------------------------------------------------------------
 
 def test_passphrase_and_recovery_key_open_the_same_dek():
-    opened, recovery_key = vault.create("owner-uid", PASSPHRASE, NOW)
+    opened, recovery_key = new_vault()
     doc = vault.parse(json.dumps(opened.doc).encode())
     assert vault.open_with_passphrase(doc, PASSPHRASE).dek == opened.dek
     assert vault.open_with_recovery_key(doc, recovery_key).dek == opened.dek
@@ -101,8 +118,8 @@ def test_passphrase_and_recovery_key_open_the_same_dek():
 
 
 def test_wrong_credentials_fail_cleanly():
-    opened, recovery_key = vault.create("owner-uid", PASSPHRASE, NOW)
-    other, other_key = vault.create("owner-uid", PASSPHRASE, NOW)
+    opened, recovery_key = new_vault()
+    other, other_key = new_vault()
     with pytest.raises(vault.WrongCredential):
         vault.open_with_passphrase(opened.doc, "fictional wrong passphrase")
     with pytest.raises(vault.WrongCredential, match="recovery"):
@@ -117,7 +134,7 @@ def test_wrong_credentials_fail_cleanly():
 
 
 def test_passphrase_change_keeps_the_dek_and_the_recovery_key():
-    opened, recovery_key = vault.create("owner-uid", PASSPHRASE, NOW)
+    opened, recovery_key = new_vault()
     changed = vault.with_passphrase(opened, NEW_PASSPHRASE, NOW)
     with pytest.raises(vault.WrongCredential):
         vault.open_with_passphrase(changed, PASSPHRASE)
@@ -127,13 +144,13 @@ def test_passphrase_change_keeps_the_dek_and_the_recovery_key():
 
 
 def test_derived_keys_are_reproducible_separate_and_never_the_dek():
-    opened, recovery_key = vault.create("owner-uid", PASSPHRASE, NOW)
+    opened, recovery_key = new_vault()
     keys = {p: vault.derive(opened.dek, p) for p in vault.PURPOSES}
     assert len(set(keys.values())) == len(vault.PURPOSES) and bytes(opened.dek) not in keys.values()
     assert all(len(k) == 32 for k in keys.values())
     recovered = vault.open_with_recovery_key(vault.with_passphrase(opened, NEW_PASSPHRASE, NOW), recovery_key)
     assert {p: vault.derive(recovered.dek, p) for p in vault.PURPOSES} == keys
-    other, _ = vault.create("owner-uid", PASSPHRASE, NOW)
+    other, _ = new_vault()
     assert vault.derive(other.dek, "database") != keys["database"]
     with pytest.raises(ValueError):
         vault.derive(opened.dek, "something-else")
@@ -142,7 +159,7 @@ def test_derived_keys_are_reproducible_separate_and_never_the_dek():
 # 6. Corrupted, truncated, unsupported and tampered vaults -------------------------------------------------
 
 def _sealed_bytes():
-    opened, recovery_key = vault.create("owner-uid", PASSPHRASE, NOW)
+    opened, recovery_key = new_vault()
     return json.dumps(opened.doc, indent=2, sort_keys=True).encode(), opened, recovery_key
 
 
@@ -184,9 +201,39 @@ def test_damaged_vaults_are_refused_as_damaged(damage):
 
 def test_unsupported_versions_are_refused():
     raw, _, _ = _sealed_bytes()
+    for version in (0, 3, True, "2"):
+        with pytest.raises(vault.VaultError) as err:
+            vault.parse(json.dumps({**json.loads(raw), "version": version}).encode())
+        assert err.value.code == "unsupported", version
+
+
+def test_v1_vaults_still_open_and_upgrade_to_v2_without_new_keys():
+    """M3.1-B wrote v1. A v1 vault opens with both credentials and becomes v2 with the same DEK, ids and wraps."""
+    old, recovery_key = new_vault(version=1)
+    v1 = vault.parse(json.dumps(old.doc).encode())
+    assert v1["version"] == 1 and "database" not in v1 and vault.database_state(v1) == "plaintext"
+    opened = vault.open_with_passphrase(v1, PASSPHRASE)
+    v2 = vault.parse(json.dumps(vault.upgraded(opened, "Fictional Owner", NOW)).encode())
+    assert v2["version"] == 2 and v2["database"]["state"] == "plaintext" and v2["owner_display_name"] == "Fictional Owner"
+    assert (v2["vault_id"], v2["key_id"]) == (v1["vault_id"], v1["key_id"])
+    assert vault.open_with_passphrase(v2, PASSPHRASE).dek == old.dek
+    assert vault.open_with_recovery_key(v2, recovery_key).dek == old.dek      # the v1 recovery wrap keeps working
+    assert v2["database"]["key_fingerprint"] == vault.fingerprint(vault.derive(old.dek, "database"))
+    encrypted = vault.with_database_state(vault.Opened(v2, opened.dek), "encrypted", NOW, migrated=True)
+    assert encrypted["database"]["state"] == "encrypted" and encrypted["database"]["migrated_from_plaintext_at"] == NOW
+    changed = vault.with_passphrase(vault.Opened(encrypted, opened.dek), NEW_PASSPHRASE, NOW)
+    assert changed["wraps"]["passphrase"]["aad_version"] == 2 and changed["wraps"]["recovery"]["aad_version"] == 1
+    assert vault.open_with_recovery_key(vault.parse(json.dumps(changed).encode()), recovery_key).dek == old.dek
+    # The database state is covered by the MAC: editing it (and fixing the checksum) is detected.
+    forged = _reseal_checksum({**encrypted, "database": {**encrypted["database"], "state": "plaintext"}})
     with pytest.raises(vault.VaultError) as err:
-        vault.parse(json.dumps({**json.loads(raw), "version": 2}).encode())
-    assert err.value.code == "unsupported"
+        vault.open_with_passphrase(vault.parse(json.dumps(forged).encode()), PASSPHRASE)
+    assert err.value.code == "tampered"
+    for bad in ({**v2, "database": {**v2["database"], "state": "unknown"}},
+                {**v2, "wraps": {**v2["wraps"], "recovery": {**v2["wraps"]["recovery"], "aad_version": True}}},
+                {**v1, "database": v2["database"]}):
+        with pytest.raises(vault.VaultError):
+            vault.parse(json.dumps(_reseal_checksum(bad)).encode())
 
 
 def _reseal_checksum(doc: dict) -> dict:
@@ -221,7 +268,7 @@ def test_deliberate_edits_that_fix_the_checksum_are_still_detected():
 
 def test_interrupted_write_keeps_the_previous_vault(tmp_path, monkeypatch):
     path = tmp_path / "vault.json"
-    opened, _ = vault.create("owner-uid", PASSPHRASE, NOW)
+    opened, _ = new_vault()
     vault.write(path, opened.doc, opened.dek, replace_existing=False)
     before = path.read_bytes()
 
@@ -238,10 +285,10 @@ def test_interrupted_write_keeps_the_previous_vault(tmp_path, monkeypatch):
 
 def test_a_write_that_does_not_verify_is_rolled_back(tmp_path, monkeypatch):
     path = tmp_path / "vault.json"
-    opened, _ = vault.create("owner-uid", PASSPHRASE, NOW)
+    opened, _ = new_vault()
     vault.write(path, opened.doc, opened.dek, replace_existing=False)
     before = path.read_bytes()
-    other, _ = vault.create("owner-uid", PASSPHRASE, NOW)
+    other, _ = new_vault()
     with pytest.raises(vault.VaultError) as err:      # a document sealed for another DEK fails the read-back check
         vault.write(path, other.doc, opened.dek, replace_existing=True)
     assert err.value.code == "write_failed" and path.read_bytes() == before
@@ -249,16 +296,16 @@ def test_a_write_that_does_not_verify_is_rolled_back(tmp_path, monkeypatch):
 
 def test_existing_vaults_are_never_replaced_by_default(tmp_path):
     path = tmp_path / "vault.json"
-    opened, _ = vault.create("owner-uid", PASSPHRASE, NOW)
+    opened, _ = new_vault()
     vault.write(path, opened.doc, opened.dek, replace_existing=False)
-    other, _ = vault.create("owner-uid", PASSPHRASE, NOW)
+    other, _ = new_vault()
     with pytest.raises(vault.VaultError) as err:
         vault.write(path, other.doc, other.dek, replace_existing=False)
     assert err.value.code == "exists" and vault.read(path)["vault_id"] == opened.doc["vault_id"]
 
 
 def test_lock_wipes_the_dek_from_memory():
-    opened, _ = vault.create("owner-uid", PASSPHRASE, NOW)
+    opened, _ = new_vault()
     keep = opened.dek
     opened.wipe()
     assert keep == bytearray(32)
@@ -272,7 +319,8 @@ def test_setup_creates_a_vault_and_shows_the_recovery_key_until_confirmed(protec
     assert key1 and first["vault"]["recovery_confirmed"] is False
     assert vault_file().exists() and owner_row()["vault_id"] == vault.read(vault_file())["vault_id"]
     info = status(protected, first)
-    assert info["key_id"] == first["vault"]["key_id"] and info["encrypted_at_rest"] is False
+    assert info["key_id"] == first["vault"]["key_id"] and info["encrypted_at_rest"]["database"] is True
+    assert info["database"]["state"] == "encrypted" and info["encrypted_at_rest"]["documents"] is False
     assert set(info["derived_key_fingerprints"]) == set(vault.PURPOSES)
     # Not confirmed yet: the next unlock issues a fresh key (the unseen one stops working) …
     second = unlock(protected).json()
@@ -302,7 +350,7 @@ def test_recovery_key_restores_the_same_dek_and_sets_a_new_passphrase(protected)
 
 def test_wrong_and_mistyped_recovery_keys(protected, monkeypatch):
     reply = setup(protected)
-    other_key = vault.create("x", PASSPHRASE, NOW)[1]
+    other_key = new_vault()[1]
     typo = reply["recovery_key"][:-1] + ("A" if reply["recovery_key"][-1] != "A" else "B")
     r = recover(protected, typo)
     assert r.status_code == 422 and "typing mistake" in r.json()["detail"]        # typos are not counted as guesses
@@ -334,8 +382,7 @@ def test_changing_the_passphrase(protected):
     assert again.status_code == 200 and live_dek() == dek and again.json()["vault"]["key_id"] == key_id
     assert recover(protected, reply["recovery_key"], "third fictional passphrase").status_code == 200
     assert live_dek() == dek
-    with db.connection() as conn:
-        assert auth._verifier_matches(auth.owner(conn), "third fictional passphrase")
+    assert "password_verifier" not in owner_row()                  # retired by migration 6: the vault decides
     assert protected.post("/api/vault/passphrase", json={"current_passphrase": PASSPHRASE, "new_passphrase": NEW_PASSPHRASE}).status_code == 401
 
 
@@ -359,15 +406,18 @@ def test_lock_and_expiry_drop_the_key(protected, monkeypatch):
     reply = setup(protected)
     [session] = auth._sessions.values()
     held = session.keys.dek
+    held_db = session.db_key
     protected.post("/api/auth/lock", headers=h(reply))
     assert held == bytearray(32) and session.keys is None
+    assert held_db == bytearray(32) and session.db_key is None
     second = unlock(protected).json()
     [session] = auth._sessions.values()
-    held = session.keys.dek
+    held, held_db = session.keys.dek, session.db_key
     monkeypatch.setenv("ONCOSCOPE_SESSION_IDLE_SECONDS", "0")
     time.sleep(0.01)
+    assert auth.sweep() == 1                                     # expiry wipes the keys without waiting for a request
+    assert held == bytearray(32) and held_db == bytearray(32)
     assert protected.get("/api/patients", headers=h(second)).status_code == 401
-    assert held == bytearray(32)
     monkeypatch.setenv("ONCOSCOPE_SESSION_IDLE_SECONDS", "900")
     unlock(protected)                                            # unlocking again replaces (and wipes) the old session
     [old] = auth._sessions.values()
@@ -409,10 +459,14 @@ def test_a_replaced_vault_is_refused(protected, tmp_path):
     reply = setup(protected)
     confirm(protected, reply)
     raw = vault_file().read_bytes()
-    stranger, _ = vault.create(owner_row()["uid"], PASSPHRASE, NOW)       # same owner id and passphrase, different DEK
-    vault.write(vault_file(), stranger.doc, stranger.dek, replace_existing=True)
-    r = unlock(protected)
-    assert r.status_code == 409 and "does not belong" in r.json()["detail"]
+    db_before = db.database_path().read_bytes()
+    for state in ("encrypted", "pending"):   # same owner id and passphrase, different DEK
+        stranger, _ = vault.create(owner_row()["uid"], PASSPHRASE, NOW, display_name="Fictional Owner", database_state=state)
+        vault.write(vault_file(), stranger.doc, stranger.dek, replace_existing=True)
+        stranger_bytes = vault_file().read_bytes()
+        r = unlock(protected)
+        assert r.status_code == 409 and "does not open with this installation's key" in r.json()["detail"]
+        assert vault_file().read_bytes() == stranger_bytes and db.database_path().read_bytes() == db_before
     vault_file().write_bytes(raw)
     assert unlock(protected).status_code == 200
 
@@ -421,10 +475,8 @@ def test_setup_never_replaces_an_existing_vault_file(protected):
     vault_file().parent.mkdir(parents=True, exist_ok=True)
     vault_file().write_bytes(b"FICTIONAL leftover vault")
     r = protected.post("/api/auth/setup", json={"display_name": "Fictional Owner", "passphrase": PASSPHRASE})
-    assert r.status_code == 409 and "already exists" in r.json()["detail"]
-    assert vault_file().read_bytes() == b"FICTIONAL leftover vault"
-    with db.connection() as conn:
-        assert auth.owner(conn) is None
+    assert r.status_code == 409 and "key vault" in r.json()["detail"]
+    assert vault_file().read_bytes() == b"FICTIONAL leftover vault" and not db.database_path().exists()
 
 
 # 9 through the API: interrupted passphrase changes and initialisation ------------------------------------------
@@ -446,62 +498,21 @@ def test_interrupted_passphrase_change_before_the_vault_is_replaced(protected, m
 
 
 def test_interrupted_passphrase_change_after_the_vault_is_replaced(protected, monkeypatch):
+    """The vault is written first and is authoritative: a crash before the audit entry leaves a working new passphrase."""
+    from app import main
     reply = setup(protected)
     confirm(protected, reply)
     dek = live_dek()
-    original = auth._store_verifier
 
     def crash(*_):
         raise OSError("simulated crash after the vault was written")
-    monkeypatch.setattr(auth, "_store_verifier", crash)
+    original = main.record_events
+    monkeypatch.setattr(main, "record_events", crash)
     with pytest.raises(OSError):
         protected.post("/api/vault/passphrase", headers=h(reply), json={"current_passphrase": PASSPHRASE, "new_passphrase": NEW_PASSPHRASE})
-    monkeypatch.setattr(auth, "_store_verifier", original)
-    # The vault (authoritative) has the new passphrase; the old verifier is left over and gets re-synchronised.
+    monkeypatch.setattr(main, "record_events", original)
     assert unlock(protected).status_code == 401
     assert unlock(protected, NEW_PASSPHRASE).status_code == 200 and live_dek() == dek
-    assert "verifier_resynced" in actions()
-    with db.connection() as conn:
-        assert auth._verifier_matches(auth.owner(conn), NEW_PASSPHRASE)
-
-
-def _legacy_owner(passphrase=PASSPHRASE):
-    """An M3.1-A installation: owner and verifier, no vault yet."""
-    with db.connection() as conn:
-        conn.execute("INSERT INTO local_owner(id, uid, display_name, password_verifier, created_at) VALUES(1,?,?,?,?)",
-                     ("fictional-legacy-uid", "Fictional Legacy Owner", auth._hasher.hash(passphrase), NOW))
-
-
-def test_an_m31a_installation_gets_its_vault_at_the_next_unlock(protected):
-    _legacy_owner()
-    assert protected.get("/api/auth/status").json()["recovery_available"] is False
-    assert recover(protected, vault.create("x", PASSPHRASE, NOW)[1]).status_code == 409
-    assert unlock(protected, "fictional wrong passphrase").status_code == 401 and not vault_file().exists()
-    reply = unlock(protected).json()
-    assert reply["recovery_key"] and owner_row()["vault_id"] == vault.read(vault_file())["vault_id"]
-    assert recover(protected, reply["recovery_key"]).status_code == 200
-    assert "vault_initialized" in actions()
-
-
-def test_interrupted_initialisation_is_adopted_not_replaced(protected, monkeypatch):
-    _legacy_owner()
-    vault_file().parent.mkdir(parents=True, exist_ok=True)
-    stale = vault_file().with_name(f".{vault_file().name}.abc123.tmp")
-    stale.write_bytes(b"FICTIONAL half-written vault")
-
-    def crash(*_):
-        raise OSError("simulated crash before the database recorded the vault")
-    real_bind = auth._bind
-    monkeypatch.setattr(auth, "_bind", crash)
-    with pytest.raises(OSError):
-        unlock(protected)
-    monkeypatch.setattr(auth, "_bind", real_bind)
-    written = vault.read(vault_file())
-    assert owner_row()["vault_id"] is None and not stale.exists()
-    reply = unlock(protected).json()                       # the file left behind is adopted, not replaced
-    assert reply["vault"]["key_id"] == written["key_id"] and owner_row()["vault_id"] == written["vault_id"]
-    assert reply["recovery_key"]                            # never confirmed, so a key is issued now
-    assert "vault_adopted" in actions()
 
 
 # 7. No plaintext secrets on disk ----------------------------------------------------------------------------
@@ -516,7 +527,7 @@ def test_no_plaintext_secrets_are_written_anywhere(protected, tmp_path):
     protected.post("/api/patients", headers=h(rec), json={"label": "Fictional Vault Case"})
     dek = live_dek()
     exported = protected.get("/api/patients/1/export.json", headers=h(rec)).text
-    backup_dir = backup(tmp_path / "backups")
+    backup_dir = backup(tmp_path / "backups", key=session_key())
     secrets_ = [dek, dek.hex().encode(), base64.b64encode(dek), PASSPHRASE.encode(), NEW_PASSPHRASE.encode(),
                 b"third fictional passphrase"]
     for key in (first_key, second["recovery_key"]):
@@ -563,17 +574,17 @@ def test_backups_carry_the_vault_and_restores_never_replace_one(protected, tmp_p
     reply = setup(protected)
     confirm(protected, reply)
     protected.post("/api/patients", headers=h(reply), json={"label": "Fictional Backup Case"})
-    dek = live_dek()
-    backup_dir = backup(tmp_path / "backups")
+    dek, key = live_dek(), bytearray(session_key())
+    backup_dir = backup(tmp_path / "backups", key=key)
     assert (backup_dir / "oncoscope-vault.json").read_bytes() == vault_file().read_bytes()
-    assert verify_backup(backup_dir)["ok"]
+    assert verify_backup(backup_dir, key)["ok"]
     (backup_dir / "oncoscope-vault.json").write_bytes(b"FICTIONAL damaged")
-    assert not verify_backup(backup_dir)["ok"]
+    assert not verify_backup(backup_dir, key)["ok"]
     (backup_dir / "oncoscope-vault.json").write_bytes(vault_file().read_bytes())
 
     # Restore onto a clean folder, then recover with the recovery key alone: same DEK.
     target = tmp_path / "elsewhere" / "oncoscope.sqlite3"
-    result = restore(backup_dir, target)
+    result = restore(backup_dir, target, key=key)
     assert result["consistent"], result["differences"]
     monkeypatch.setenv("ONCOSCOPE_DB_PATH", str(target))
     with TestClient(app) as moved:
@@ -584,7 +595,7 @@ def test_backups_carry_the_vault_and_restores_never_replace_one(protected, tmp_p
     other.parent.mkdir()
     (other.parent / "oncoscope-vault.json").write_bytes(b"FICTIONAL another installation's vault")
     with pytest.raises(RestoreError, match="different key vault"):
-        restore(backup_dir, other)
+        restore(backup_dir, other, key=key)
     assert (other.parent / "oncoscope-vault.json").read_bytes() == b"FICTIONAL another installation's vault"
     assert not other.exists()
 

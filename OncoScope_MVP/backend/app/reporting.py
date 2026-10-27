@@ -4,20 +4,19 @@ from __future__ import annotations
 import csv
 import io
 import json
-import sqlite3
 
-from .db import RECORD_TABLES, SCHEMA_VERSION, now_utc, verify_audit_chain
+from .db import RECORD_TABLES, SCHEMA_VERSION, now_utc, sqlite, verify_audit_chain
 from .evidence import build_findings
 from .units import format_number
 
 EXPORT_FORMAT = "oncoscope-synthetic-export"
 
 
-def _rows(conn: sqlite3.Connection, query: str, args: tuple = ()) -> list[dict]:
+def _rows(conn: sqlite.Connection, query: str, args: tuple = ()) -> list[dict]:
     return [dict(r) for r in conn.execute(query, args).fetchall()]
 
 
-def patient_records(conn: sqlite3.Connection, patient_id: int) -> dict[str, list[dict]]:
+def patient_records(conn: sqlite.Connection, patient_id: int) -> dict[str, list[dict]]:
     order = {"sources": "id", "events": "date, id", "labs": "date, id", "treatments": "date, id",
              "studies": "date, id", "measurements": "study_id, lesion_key, id"}
     return {t: _rows(conn, f"SELECT * FROM {t} WHERE patient_id=? ORDER BY {order[t]}", (patient_id,)) for t in RECORD_TABLES}
@@ -27,7 +26,7 @@ def _one_line(text: str) -> str:
     return " ".join(text.split())
 
 
-def build_report(conn: sqlite3.Connection, patient: dict) -> str:
+def build_report(conn: sqlite.Connection, patient: dict) -> str:
     records = patient_records(conn, patient["id"])
     sources = {s["id"]: s for s in records["sources"]}
     studies = {s["id"]: s for s in records["studies"]}
@@ -108,7 +107,7 @@ def build_report(conn: sqlite3.Connection, patient: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def build_export(conn: sqlite3.Connection, patient: dict) -> dict:
+def build_export(conn: sqlite.Connection, patient: dict) -> dict:
     records = patient_records(conn, patient["id"])
     audit_rows = _rows(conn, "SELECT * FROM audit_log WHERE patient_id=? ORDER BY id", (patient["id"],))
     for row in audit_rows:

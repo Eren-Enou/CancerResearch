@@ -5,13 +5,13 @@ Findings are descriptive. Nothing here resolves a conflict, picks a "correct" va
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections import defaultdict
 
+from .db import sqlite
 from .units import format_number, test_key
 
 
-def _rows(conn: sqlite3.Connection, query: str, args: tuple = ()) -> list[dict]:
+def _rows(conn: sqlite.Connection, query: str, args: tuple = ()) -> list[dict]:
     return [dict(r) for r in conn.execute(query, args).fetchall()]
 
 
@@ -19,7 +19,7 @@ def _ref(entity: str, record: dict) -> dict:
     return {"entity": entity, "id": record["id"], "source_id": record.get("source_id")}
 
 
-def build_findings(conn: sqlite3.Connection, patient_id: int) -> list[dict]:
+def build_findings(conn: sqlite.Connection, patient_id: int) -> list[dict]:
     q = lambda table: _rows(conn, f"SELECT * FROM {table} WHERE patient_id=? ORDER BY id", (patient_id,))
     sources = {s["id"]: s for s in q("sources")}
     labs, studies, treatments, events, measurements = q("labs"), q("studies"), q("treatments"), q("events"), q("measurements")

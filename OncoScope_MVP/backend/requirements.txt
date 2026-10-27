@@ -4,3 +4,5 @@ pydantic>=2.5,<3
 argon2-cffi>=25.1,<26
 cryptography>=50.0.2,<51
 pypdf>=5,<7
+# SQLCipher 4 (bundled in the wheel) for the encrypted protected-mode database (M3.1-C). No plaintext fallback.
+sqlcipher3>=0.6.4,<0.7

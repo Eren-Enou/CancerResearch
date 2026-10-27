@@ -1,17 +1,22 @@
-"""Local key vault (M3.1-B): one random data-encryption key (DEK), wrapped twice — by the owner's passphrase and by a
-recovery key. Nothing in OncoScope is encrypted with the DEK yet; M3.1-C/D/E will use keys derived from it.
+"""Local key vault (M3.1-B/C): one random data-encryption key (DEK), wrapped twice — by the owner's passphrase and by a
+recovery key. Since M3.1-C the SQLCipher database key is derived from it; documents follow in M3.1-D.
 
 All primitives come from maintained libraries: Argon2id from argon2-cffi; AES-256-GCM, HKDF-SHA256 and HMAC-SHA256 from
 pyca/cryptography; randomness from `secrets`. This module only arranges them.
 
-Vault file (JSON, format "oncoscope-key-vault", version 1):
+Vault file (JSON, format "oncoscope-key-vault", version 2; version 1 is still read and upgraded):
 - header: vault id, owner uid, DEK key id (an HKDF-derived identifier, not the key), timestamps, recovery confirmation;
+- v2 only: `owner_display_name` and `database` (state "plaintext" | "pending" | "encrypted", cipher, and the database
+  key's fingerprint). This is what OncoScope needs before unlock, outside the encrypted database. The MAC covers it, so
+  it is authenticated as soon as the vault opens, before any SQLCipher call;
 - `wraps.passphrase`: Argon2id parameters + salt, AES-GCM nonce + ciphertext of the DEK;
 - `wraps.recovery`: HKDF salt, AES-GCM nonce + ciphertext of the DEK;
 - `mac`: HMAC-SHA256 over the whole body under a DEK-derived key (detects edits made by someone without the DEK);
 - `checksum`: SHA-256 over everything else (tells accidental damage apart from a wrong passphrase).
 Each wrap's associated data binds it to the format, version, vault id, key id and wrap kind, so wraps cannot be moved
-between vaults or kinds. The DEK, passphrase and recovery key are never written anywhere.
+between vaults or kinds. A v2 wrap records the version it was bound under (`aad_version`), so wraps carried over from a
+v1 vault keep working (the recovery wrap cannot be re-made without the recovery key). The DEK, passphrase and recovery
+key are never written anywhere.
 """
 from __future__ import annotations
 
@@ -32,7 +37,11 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-FORMAT, VERSION = "oncoscope-key-vault", 1
+FORMAT, VERSION = "oncoscope-key-vault", 2
+SUPPORTED_VERSIONS = (1, 2)
+# Where the database stands. v1 vaults predate encryption, so their database is plaintext.
+DATABASE_STATES = ("plaintext", "pending", "encrypted")
+DATABASE_CIPHER = "sqlcipher4-raw-key"
 KEY_BYTES, SALT_BYTES, NONCE_BYTES = 32, 16, 12
 # Argon2id, RFC 9106 "second recommended" (low-memory) profile; stored per vault so it can be raised later.
 ARGON2 = {"time_cost": 3, "memory_cost": 65536, "parallelism": 4}
@@ -150,14 +159,16 @@ def fingerprint(key: bytes) -> str:
 
 # --- building and checking vault documents --------------------------------------------------------
 
-def _aad(doc: dict, kind: str) -> bytes:
-    return _canonical({"format": doc["format"], "version": doc["version"], "vault_id": doc["vault_id"],
+def _aad(doc: dict, kind: str, version: int) -> bytes:
+    return _canonical({"format": doc["format"], "version": version, "vault_id": doc["vault_id"],
                        "key_id": doc["key_id"], "wrap": kind})
 
 
 def _wrap(doc: dict, kind: str, kek: bytes, dek: bytes) -> dict:
     nonce = secrets.token_bytes(NONCE_BYTES)
-    return {"nonce": _b64(nonce), "ciphertext": _b64(AESGCM(kek).encrypt(nonce, bytes(dek), _aad(doc, kind)))}
+    wrap = {"nonce": _b64(nonce),
+            "ciphertext": _b64(AESGCM(kek).encrypt(nonce, bytes(dek), _aad(doc, kind, doc["version"])))}
+    return wrap if doc["version"] == 1 else {**wrap, "aad_version": doc["version"]}
 
 
 def _unwrap(doc: dict, kind: str, kek: bytes) -> bytearray:
@@ -165,7 +176,7 @@ def _unwrap(doc: dict, kind: str, kek: bytes) -> bytearray:
     nonce = _unb64(wrap["nonce"], NONCE_BYTES, f"{kind} nonce")
     ciphertext = _unb64(wrap["ciphertext"], KEY_BYTES + 16, f"{kind} ciphertext")
     try:
-        return bytearray(AESGCM(kek).decrypt(nonce, ciphertext, _aad(doc, kind)))
+        return bytearray(AESGCM(kek).decrypt(nonce, ciphertext, _aad(doc, kind, wrap.get("aad_version", 1))))
     except InvalidTag:
         raise WrongCredential(kind) from None
 
@@ -189,15 +200,48 @@ def _check_mac(doc: dict, dek: bytes) -> None:
         raise VaultError("tampered", "The key vault was altered: its integrity code does not match")
 
 
-def create(owner_uid: str, passphrase: str, now: str) -> tuple[Opened, str]:
-    """A new vault with a fresh DEK. Returns the opened vault and the formatted recovery key (shown once, never stored)."""
+def _database(dek: bytes, state: str, now: str, migrated_at: str | None = None) -> dict:
+    return {"state": state, "cipher": DATABASE_CIPHER, "key_fingerprint": fingerprint(derive(dek, "database")),
+            "updated_at": now, "migrated_from_plaintext_at": migrated_at}
+
+
+def create(owner_uid: str, passphrase: str, now: str, *, display_name: str, database_state: str = "pending",
+           version: int = VERSION) -> tuple[Opened, str]:
+    """A new vault with a fresh DEK. Returns the opened vault and the formatted recovery key (shown once, never stored).
+    `version=1` exists only so tests can build the vaults M3.1-B wrote."""
     dek = bytearray(secrets.token_bytes(KEY_BYTES))
     recovery = secrets.token_bytes(KEY_BYTES)
-    doc = {"format": FORMAT, "version": VERSION, "vault_id": str(uuid.uuid4()), "owner_uid": owner_uid,
+    doc = {"format": FORMAT, "version": version, "vault_id": str(uuid.uuid4()), "owner_uid": owner_uid,
            "key_id": key_id(dek), "created_at": now, "updated_at": now, "recovery_confirmed": False, "wraps": {}}
+    if version >= 2:
+        doc |= {"owner_display_name": display_name, "database": _database(dek, database_state, now)}
     doc["wraps"]["passphrase"] = _new_passphrase_wrap(doc, passphrase, dek)
     doc["wraps"]["recovery"] = _new_recovery_wrap(doc, recovery, dek)
     return Opened(_seal(doc, dek), dek), format_recovery_key(recovery)
+
+
+def database_state(doc: dict) -> str:
+    """Readable before unlock (it is not secret); authenticated by the MAC once the vault opens."""
+    return doc["database"]["state"] if doc["version"] >= 2 else "plaintext"
+
+
+def upgraded(opened: Opened, display_name: str, now: str) -> dict:
+    """A v1 vault as v2: same DEK, ids and wraps (which keep their v1 binding); the database is still plaintext."""
+    if opened.doc["version"] != 1:
+        return opened.doc
+    body = _body(opened.doc)
+    wraps = {kind: {**wrap, "aad_version": 1} for kind, wrap in body["wraps"].items()}
+    doc = {**body, "version": 2, "updated_at": now, "owner_display_name": display_name, "wraps": wraps,
+           "database": _database(opened.dek, "plaintext", now)}
+    return _seal(doc, opened.dek)
+
+
+def with_database_state(opened: Opened, state: str, now: str, *, migrated: bool = False) -> dict:
+    if opened.doc["version"] < 2 or state not in DATABASE_STATES:
+        raise ValueError("A database state needs a v2 vault and a known state")
+    earlier = opened.doc["database"].get("migrated_from_plaintext_at")
+    return _seal({**_body(opened.doc), "updated_at": now,
+                  "database": _database(opened.dek, state, now, now if migrated else earlier)}, opened.dek)
 
 
 def _new_passphrase_wrap(doc: dict, passphrase: str, dek: bytes) -> dict:
@@ -229,16 +273,17 @@ def with_recovery_confirmed(opened: Opened, now: str) -> dict:
 
 
 def parse(raw: bytes) -> dict:
-    """Structural checks only (no secrets needed). Raises VaultError for anything that is not a well-formed v1 vault."""
+    """Structural checks only (no secrets needed). Raises VaultError for anything that is not a well-formed v1/v2 vault."""
     try:
         doc = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError):
         raise VaultError("damaged", "The key vault is damaged or incomplete (not valid JSON)") from None
     if not isinstance(doc, dict) or doc.get("format") != FORMAT:
         raise VaultError("damaged", "The file is not an OncoScope key vault")
-    if doc.get("version") != VERSION:
-        raise VaultError("unsupported", f"Key vault version {doc.get('version')!r} is not supported by this OncoScope "
-                                        f"(supports {VERSION}); nothing was changed")
+    version = doc.get("version")
+    if isinstance(version, bool) or version not in SUPPORTED_VERSIONS:
+        raise VaultError("unsupported", f"Key vault version {version!r} is not supported by this OncoScope "
+                                        f"(supports {', '.join(map(str, SUPPORTED_VERSIONS))}); nothing was changed")
     if not isinstance(doc.get("checksum"), str) or hashlib.sha256(_canonical({k: v for k, v in doc.items() if k != "checksum"})).hexdigest() != doc["checksum"]:
         raise VaultError("damaged", "The key vault is damaged (checksum mismatch)")
     try:
@@ -250,6 +295,13 @@ def parse(raw: bytes) -> dict:
         for name, (low, high) in ARGON2_LIMITS.items():
             value = wraps["passphrase"][name]
             ok = ok and isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+        if version >= 2:
+            database = doc["database"]
+            ok = (ok and isinstance(doc["owner_display_name"], str) and database["state"] in DATABASE_STATES
+                  and database["cipher"] == DATABASE_CIPHER and isinstance(database["key_fingerprint"], str)
+                  and all(type(w.get("aad_version")) is int and w["aad_version"] in (1, 2) for w in wraps.values()))
+        else:
+            ok = ok and "database" not in doc and not any("aad_version" in w for w in wraps.values())
     except (KeyError, TypeError, AttributeError):
         ok = False
     if not ok:

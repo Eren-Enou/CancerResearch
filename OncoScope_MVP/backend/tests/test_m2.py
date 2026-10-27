@@ -241,10 +241,10 @@ def test_verification_status_and_reset_on_correction(client, case):
 
 def test_audit_log_append_only_and_tamper_evident(client, case):
     with db.connection() as conn:
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(db.sqlite.IntegrityError):
             conn.execute("UPDATE audit_log SET reason='x' WHERE id=1")
     with db.connection() as conn:
-        with pytest.raises(sqlite3.IntegrityError):
+        with pytest.raises(db.sqlite.IntegrityError):
             conn.execute("DELETE FROM audit_log WHERE id=1")
     assert ok(client.get("/api/audit/verify"))["valid"]
     with db.connection() as conn:  # simulate out-of-band tampering by someone who drops the trigger
