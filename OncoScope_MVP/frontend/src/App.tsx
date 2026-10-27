@@ -153,7 +153,7 @@ export default function App({ access }: { access: Access }) {
         {access.mode === 'protected'
           ? <div className="session-box" data-testid="session-box"><span className="tiny muted">Signed in as</span> <strong>{access.actor.label}</strong></div>
           : <div className="session-box demo" data-testid="demo-banner"><strong>Demonstration mode</strong><span className="tiny">Fictional data only, no sign-in. Protected storage is not available here.</span></div>}
-        <span className="local-dot" /> Local-only prototype<p>Phase 1 · M3.1-B · v0.5.0<br />Not encrypted at rest · No automated interpretation</p></div>
+        <span className="local-dot" /> Local-only prototype<p>Phase 1 · M3.1-C · v0.6.0<br />{access.mode === 'protected' ? 'Database encrypted · Documents not yet' : 'Demonstration database: not encrypted'} · No automated interpretation</p></div>
     </aside>
     <main className="main">
       <header className="topbar"><div><div className="eyebrow">CLINICAL RECORDS / {view.toUpperCase()}</div><h1>{view === 'Overview' ? 'Patient overview' : view === 'History' ? 'Case history' : view}</h1></div>
@@ -225,7 +225,7 @@ export default function App({ access }: { access: Access }) {
                 {(['sources', 'events', 'labs', 'treatments', 'studies', 'measurements', 'audit_log'] as const).map(e => <button type="button" key={e} className="export-link" onClick={() => save(`export/${e}.csv`, `${e}.csv`)}>{e}.csv</button>)}</div>
               <details className="new-case"><summary>Create another fictional case</summary><CreateCase onCreated={id => { setPatientId(id); reload(); }} /></details></section></>}
         </>}
-        <footer className="footer">OncoScope 0.5.0 · Local-first prototype · Not for clinical decisions · Verify every observation against original documentation</footer>
+        <footer className="footer">OncoScope 0.6.0 · Local-first prototype · Not for clinical decisions · Verify every observation against original documentation</footer>
       </div>
     </main>
   </div>;

@@ -42,7 +42,7 @@ export function RecoveryKeyScreen({ recoveryKey, onConfirmed, onLock }: { recove
       <div className="transcribe-row"><button type="button" className="lock-button" onClick={copy}>Copy recovery key</button></div>
       {copied && <p className="tiny" role="status">{copied}</p>}
       <div className="unit-warning"><strong>Keep it outside this computer</strong>: in a password manager or on paper in a safe place.
-        If you lose both the passphrase and this recovery key, data that OncoScope encrypts in later versions cannot be recovered by anyone. Today the records are not yet encrypted on disk.</div>
+        If you lose both the passphrase and this recovery key, the encrypted database cannot be opened by anyone, including you. There is no reset.</div>
       <form onSubmit={submit} className="lock-form" noValidate>
         <label className="check-label"><input type="checkbox" checked={saved} onChange={e => setSaved(e.target.checked)} /> I have saved this recovery key somewhere safe</label>
         <label>Type the last group of the key ({expected.length} characters) to confirm<input value={lastGroup} onChange={e => setLastGroup(e.target.value)} autoComplete="off" spellCheck={false} maxLength={4} /></label>

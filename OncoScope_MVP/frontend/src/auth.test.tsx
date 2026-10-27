@@ -53,11 +53,12 @@ describe('session token handling', () => {
 });
 
 describe('LockScreen', () => {
-  it('checks the new passphrase before setup and explains that nothing is encrypted yet', async () => {
+  it('checks the new passphrase before setup and explains that documents are not encrypted yet', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch');
     render(<LockScreen setupRequired notice="" onUnlocked={() => {}} />);
     expect(screen.getByRole('heading', { name: 'Set up this installation' })).toBeTruthy();
-    expect(document.body.textContent).toContain('does not yet encrypt the database or documents on disk');
+    expect(document.body.textContent).toContain('the database on disk is encrypted');
+    expect(document.body.textContent).toContain('Original documents are not encrypted yet');
     fireEvent.change(screen.getByLabelText('Owner name'), { target: { value: 'Fictional Owner' } });
     fireEvent.change(screen.getByLabelText('Passphrase'), { target: { value: 'short' } });
     fireEvent.submit(screen.getByRole('button', { name: 'Create owner and unlock' }));

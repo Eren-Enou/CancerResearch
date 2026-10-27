@@ -9,6 +9,28 @@ type Props = { setupRequired: boolean; recoveryAvailable?: boolean; notice: stri
 
 const MIN_PASSPHRASE = 12;
 
+const STORAGE_TITLES: Record<string, string> = {
+  migration_required: 'Encrypt the database first',
+  migration_interrupted: 'The encryption migration did not finish',
+  refused: 'OncoScope will not open this data',
+};
+
+/** Shown instead of any unlock form when the files on disk cannot be opened safely (decided by the server without
+ * opening the database). Nothing here offers a way around the refusal. */
+export function StorageNotice({ storage, message, onRetry }: { storage: string; message: string; onRetry: () => void }) {
+  return <main className="lock-shell">
+    <section className="panel lock-panel" aria-labelledby="storage-title">
+      <div className="brand"><div className="brand-mark" aria-hidden="true">◎</div><div><strong>ONCOSCOPE</strong><span>PROTECTED LOCAL WORKSPACE</span></div></div>
+      <h1 id="storage-title">{STORAGE_TITLES[storage] ?? 'OncoScope cannot open this data'}</h1>
+      <p className="lock-notice" role="alert" data-testid="storage-message">{message}</p>
+      {storage !== 'refused' && <p className="muted">Stop the OncoScope server, then run this in the <code>backend</code> folder. It checks your passphrase,
+        makes a verified backup, encrypts a copy, verifies it, and only then replaces the database:</p>}
+      {storage !== 'refused' && <pre className="command">python -m app.encrypt_migrate</pre>}
+      <button type="button" className="primary" onClick={onRetry}>Check again</button>
+    </section>
+  </main>;
+}
+
 /** First-launch owner setup, or unlocking. Shows no case information; nothing is loaded until a session exists. */
 export function LockScreen({ setupRequired, recoveryAvailable = false, notice, onUnlocked }: Props) {
   const [recovering, setRecovering] = useState(false);
@@ -64,7 +86,7 @@ export function LockScreen({ setupRequired, recoveryAvailable = false, notice, o
         {!setupRequired && recoveryAvailable && <button type="button" className="text-button" onClick={() => setRecovering(true)}>Forgot the passphrase? Use your recovery key</button>}
       </form>}
       <div className="integrity-note"><strong>What this protects</strong>
-        <p>The lock stops OncoScope's own server from showing or changing case data without your passphrase. It does <b>not</b> yet encrypt the database or documents on disk: anyone who can read those files can still read them. Use fictional data only.</p></div>
+        <p>The lock stops OncoScope's own server from showing or changing case data without your passphrase, and the database on disk is encrypted with a key that only your passphrase or recovery key can unlock. Original documents are <b>not</b> encrypted yet: anyone who can read the documents folder can still read them. Use fictional data only.</p></div>
     </section>
   </main>;
 }
