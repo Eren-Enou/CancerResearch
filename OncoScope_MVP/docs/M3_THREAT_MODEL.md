@@ -27,8 +27,8 @@ Likelihood (L) and impact (I) are rated 1–3 for a future real-data deployment;
 
 | ID | Threat | L | I | P | Existing controls | Gap → planned mitigation |
 |---|---|---|---|---|---|---|
-| T1 | Any same-user process reads or changes all cases via the API or the files | 3 | 3 | **9** | Loopback bind; Host check; **M3.1-A: API requires an owner-passphrase session in protected mode** | Files are still plaintext, so the lock is bypassed by reading them directly → passphrase-derived key and encryption (M3.1 B, C) |
-| T4 | Lost/stolen device exposes database, documents, caches, exports | 2 | 3 | **6** | none in-app (OS disk encryption is the user's); **M3.1-B: recoverable key vault exists, not yet used** | Encryption at rest of DB + documents with vault-derived keys (M3.1 C, D); require OS disk encryption for real data |
+| T1 | Any same-user process reads or changes all cases via the API or the files | 3 | 3 | **9** | Loopback bind; Host check; **M3.1-A: API requires an owner-passphrase session in protected mode; M3.1-C: the database file is SQLCipher-encrypted** | Documents are still plaintext (M3.1-D); while unlocked, keys and decrypted pages are in the server's memory (same-user malware) |
+| T4 | Lost/stolen device exposes database, documents, caches, exports | 2 | 3 | **6** | **M3.1-C: database encrypted with a vault-derived key** (offline attack = guessing the passphrase at Argon2id cost); OS disk encryption is the user's | Documents, manifests and the plaintext pre-migration backup (M3.1-D, owner retirement); require OS disk encryption for real data |
 | T5 | Backup theft (USB/cloud copy) | 2 | 3 | **6** | Manifest verification | Encrypted backups with independent restore test (M3.1 D) |
 | T12 | Changes cannot be attributed to a person | 3 | 2 | **6** | Audit log records what/when/why; **M3.1-A: authenticated local owner on every new entry** (older entries: unknown) | Identity is self-declared and single-user; CLI backup/restore are unattributed |
 | T13 | Data cannot be deleted (append-only audit keeps old values; no deletion endpoint) | 3 | 2 | **6** | — (by design so far) | Crypto-shredding design: per-case keys; delete key + purge caches (design in M3_SECURITY_ARCHITECTURE §7; M3.2) |
@@ -61,7 +61,7 @@ Confirmed limitations (kept as strict `xfail` tests that will fail once fixed):
 |---|---|---|
 | ~~L1 (T1)~~ | ~~No authentication~~ — **fixed in M3.1-A** for protected mode; the test now passes and is no longer an xfail | `test_unauthenticated_requests_are_rejected` |
 | L2 (T6) | Removing the newest audit entries leaves a valid-looking chain unless a head was recorded elsewhere | `test_tail_truncation_is_detected_without_external_head` |
-| L3 (T4) | Records are plaintext at rest | `test_database_file_does_not_contain_plaintext_records` |
+| ~~L3 (T4)~~ | ~~Records are plaintext at rest~~ — **fixed in M3.1-C** for protected mode (SQLCipher); the test now passes and is no longer an xfail. Documents remain plaintext (M3.1-D) | `test_database_file_does_not_contain_plaintext_records` |
 
 Hypothetical concerns (not demonstrated; listed for review): undiscovered pypdf/pdf.js parser vulnerabilities (T7);
 SQLite parsing of a deliberately crafted database during restore (T15); malicious browser extensions reading page

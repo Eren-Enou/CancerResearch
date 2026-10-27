@@ -122,6 +122,9 @@ Run on Windows 11 / Edge 138, Python 3.12.6, argon2-cffi 25.1.0, cryptography 50
 
 ### M3.1-C — SQLCipher database
 
+**Implemented** (`M3_1C_DATABASE_ENCRYPTION.md`): items 1–5 below, with the owner metadata in vault format v2 and the
+verifier retired by migration 6.
+
 1. **Key:** `vault.derive(dek, "database")` as a raw key (`PRAGMA key = "x'…'"`), set only **after** the vault has
    opened. AES-GCM authenticates the DEK, so SQLCipher never sees an unverified key. Keep
    `cipher_memory_security` **off**: the M3.0 proof of concept showed a wrong key crashing the process with it on.
@@ -170,7 +173,8 @@ Run on Windows 11 / Edge 138, Python 3.12.6, argon2-cffi 25.1.0, cryptography 50
 
 ## Remaining risks
 
-1. **Plaintext at rest.** The DEK protects nothing yet. Every M3.1-A file-level risk remains.
+1. ~~**Plaintext at rest.** The DEK protects nothing yet.~~ Since M3.1-C the database is encrypted with a key derived
+   from it; documents remain plaintext until M3.1-D.
 2. **Offline guessing.** Anyone with the vault file can guess passphrases offline at Argon2id cost (64 MiB, 3 passes),
    and the database's verifier allows the same. The 12-character minimum is a policy, not a strength check. The
    recovery key (256 bits) is not practically guessable.

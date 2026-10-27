@@ -1,21 +1,40 @@
-# OncoScope — Phase 1 local prototype (M3.1-B: key vault and recovery; synthetic data only)
+# OncoScope — Phase 1 local prototype (M3.1-C: encrypted database; synthetic data only)
 
 **Status:** Source-linked medical-record organizer built with synthetic data only. Not a medical device or an oncology decision-support tool.
 
 **Core design goal:** Given two sets of entered records, reproduce their chronology and documented differences, always pointing back to the recorded sources. Never infer stage, efficacy, prognosis, or treatment recommendations.
 
-This repository is intentionally narrow in scope: a **FastAPI + SQLite API and a React + TypeScript dashboard**. It does not contain medical scans, a real patient's information, machine learning, RECIST response logic, or molecular simulation.
+This repository is intentionally narrow in scope: a **FastAPI + SQLite/SQLCipher API and a React + TypeScript dashboard**. It does not contain medical scans, a real patient's information, machine learning, RECIST response logic, or molecular simulation.
 
 ## What's implemented
+
+**M3.1-C — encrypted database and lossless migration** (`docs/M3_1C_DATABASE_ENCRYPTION.md`).
+- **Encrypted database:** in protected mode the database is a SQLCipher 4 file (sqlcipher3 0.6.4, SQLCipher 4.19.0),
+  keyed with a key derived from the vault's data key. Ordinary SQLite cannot read it, and its bytes, journals and
+  temporary files contain no record text.
+- **Locked start:** the server starts locked and reads nothing protected before unlock. Unlocking opens the vault
+  first, so a wrong credential never reaches SQLCipher. Locking wipes the key.
+- **Migration tool:** `python -m app.encrypt_migrate` encrypts an existing plaintext (fictional) installation:
+  - verified source and backup;
+  - `sqlcipher_export`;
+  - an identical fingerprint of every table, schema object and the audit head;
+  - a byte scan for plaintext;
+  - an atomic swap.
+
+  An interrupted run finishes or rolls back when the tool is run again.
+- **Backups:** encrypted backups stay encrypted and restore onto a clean folder with the passphrase or the recovery
+  key.
+- **Still plaintext:** original documents, backup manifests and the migration's own pre-migration backup (M3.1-D;
+  retiring that backup is described in the doc).
 
 **M3.1-B — key vault and recovery** (`docs/M3_1B_KEY_VAULT.md`). A protected installation has a local key vault: a
 random 256-bit data key wrapped with AES-256-GCM under an Argon2id key from the passphrase and, separately, under a
 recovery key shown once at setup. Recover with the recovery key, change the passphrase, and the data key stays the
-same; damaged, missing, replaced or half-written vaults are refused, never regenerated. **The data key does not
-encrypt anything yet** (M3.1-C/D).
+same; damaged, missing, replaced or half-written vaults are refused, never regenerated. (M3.1-C now derives the
+database key from it.)
 
-**M3.1-A — protected local access and audit identity** (`docs/M3_1A_PROTECTED_ACCESS.md`). **Records are still not
-encrypted at rest**; anyone who can read `backend/data/` can read them without the passphrase.
+**M3.1-A — protected local access and audit identity** (`docs/M3_1A_PROTECTED_ACCESS.md`). (Records were still
+plaintext on disk until M3.1-C.)
 - Protected mode (the default): first launch creates a single local owner with a passphrase (Argon2id verifier via
   `argon2-cffi`); unlocking opens a short-lived in-memory session (bearer token, 15 min idle / 8 h maximum, one at a time).
   Every API route except health, auth status, setup and unlock answers 401 without it. Lock revokes it at once.
@@ -103,7 +122,7 @@ encrypted at rest**; anyone who can read `backend/data/` can read them without t
 - Markdown report: every line cites `[record #id; state]` and `[source #id: label]`, marks corrected revisions, ends with a source register (with document hashes and citation counts) and the audit-chain status
 - **Read-only export** of synthetic cases: full JSON (records + audit log, no document bytes) and per-table CSV with a spreadsheet formula-injection guard; non-synthetic cases are refused (403)
 - **Versioned SQLite migrations** (`PRAGMA user_version` + `schema_migrations`); an unversioned Phase 1 database is upgraded in place
-- Non-destructive local backup: `python -m app.backup`
+- Non-destructive local backup: `python -m app.backup` (an encrypted database needs the passphrase or `--recovery-key`)
 - Loopback-only Host header check (DNS-rebinding protection); validation errors never echo submitted values
 - No external API requests, remote database, embedded AI, or telemetry
 
@@ -160,16 +179,16 @@ npm install && npm run dev
 
 ```powershell
 cd OncoScope_MVP\backend
-python -m pytest -q                 # 174 passed + 2 expected failures (plaintext at rest, audit tail truncation)
+python -m pytest -q                 # 208 passed + 1 expected failure (audit tail truncation, M3.1-E)
 python -m app.benchmark             # extraction benchmark against the fictional ground truth (add --holdout for the held-out set)
 
 cd ..\frontend
 npm run build                       # strict TypeScript + production build
-npm test                            # Vitest component/unit tests (45, incl. WCAG contrast, lock and recovery screens)
-npm run test:e2e                    # Playwright: M2, M2.5, M2.6 (demonstration mode), M3.1-A and M3.1-B (protected mode)
+npm test                            # Vitest component/unit tests (48, incl. WCAG contrast, lock, recovery and storage screens)
+npm run test:e2e                    # Playwright: M2, M2.5, M2.6 (demonstration mode), M3.1-A, M3.1-B and M3.1-C (protected mode)
 ```
 
-`npm run test:e2e` starts five isolated stacks (API 8010–8014 + Vite 5180–5184 for M2, M2.5, M2.6 in demonstration mode, M3.1-A in protected mode with a 45-second session lifetime, and M3.1-B in protected mode), each on a **new empty database** in the OS temp directory, then drives the UI. The M2.6 run saves screenshots to `docs/screenshots/`. The M2.5 run also calls the backup/restore CLI and the report audit script. It uses the installed Microsoft Edge (`PW_CHANNEL=chrome` to use Chrome instead; on non-Windows set `ONCOSCOPE_PYTHON` if the venv is elsewhere). No browser download is needed.
+`npm run test:e2e` starts six isolated stacks (API 8010–8015 + Vite 5180–5185 for M2, M2.5, M2.6 in demonstration mode, M3.1-A in protected mode with a 45-second session lifetime, and M3.1-B and M3.1-C in protected mode), each on a **new empty database** in the OS temp directory, then drives the UI. The M3.1-C run builds a fictional plaintext installation, migrates it with the CLI, and starts a second server process to check a restart. The M2.6 run saves screenshots to `docs/screenshots/`. The M2.5 run also calls the backup/restore CLI and the report audit script. It uses the installed Microsoft Edge (`PW_CHANNEL=chrome` to use Chrome instead; on non-Windows set `ONCOSCOPE_PYTHON` if the venv is elsewhere). No browser download is needed.
 
 ## User workflow
 
@@ -188,11 +207,11 @@ For the document-centred M2.5 workflow follow `docs/WALKTHROUGH_M2_5.md`. The ge
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/health` | Local API health, schema version and mode (no session needed) |
-| GET | `/api/auth/status` | Mode and whether owner setup is needed (no session needed) |
+| GET | `/api/auth/status` | Mode, whether owner setup is needed, and the storage state (`setup`, `locked`, `migration_required`, `migration_interrupted`, `refused`) decided from the files on disk (no session needed) |
 | POST | `/api/auth/setup` / `/api/auth/unlock` | Create the local owner (once) / unlock; both return a session token |
 | POST | `/api/auth/lock` | Revoke the current session (and drop its data key from memory) |
 | POST | `/api/auth/recover` | Recovery key + new passphrase → same data key, new session (no session needed; rate limited) |
-| GET | `/api/vault/status` | Vault identifiers, KDF settings, derived-key fingerprints (never keys) |
+| GET | `/api/vault/status` | Vault identifiers, KDF settings, database encryption (SQLCipher version, key fingerprint), derived-key fingerprints (never keys) |
 | POST | `/api/vault/passphrase` / `/api/vault/recovery-key/confirm` | Change the passphrase / confirm the recovery key was saved |
 | GET / POST | `/api/patients` | List / create fictional cases (always synthetic) |
 | GET | `/api/patients/{id}/dashboard` | Patient metadata and counts |
@@ -229,7 +248,10 @@ OncoScope_MVP/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py          FastAPI routes, corrections, comparisons
-│   │   ├── db.py            SQLite migrations, transactions, hash-chained audit writes
+│   │   ├── db.py            SQLCipher/SQLite connections, migrations, transactions, hash-chained audit writes
+│   │   ├── auth.py / vault.py  Local owner, sessions, key vault (v2), unlock order
+│   │   ├── encrypt_migrate.py  Plaintext → SQLCipher migration CLI (verified, resumable)
+│   │   ├── credentials.py   Passphrase / recovery-key prompts for the CLI tools
 │   │   ├── models.py        Pydantic request validation (dates, single-line fields, measurement rules)
 │   │   ├── units.py         Lab unit registry, number formatting, exact differences
 │   │   ├── documents.py     Content-addressed synthetic document store (SHA-256)
@@ -261,6 +283,7 @@ OncoScope_MVP/
 ├── fixtures/
 │   ├── fictional/           Fictional lab/CT reports (TXT, PDF) and an image; byte-stable (binary in git)
 │   ├── make_fixtures.py     Regenerates them deterministically
+│   ├── legacy_installation.py  Fictional plaintext M3.1-A/B installations for the migration tests and demo
 │   └── audit_report.py      Independent report-citation audit against the original files
 ├── AGENTS.md                Codex working agreement
 └── .gitignore              Excludes local database, documents, scans and .env
@@ -269,7 +292,7 @@ OncoScope_MVP/
 ## Known limitations — read before real data
 
 **Do not import or transcribe real patient data into this version.** The repository is public; never commit real data.
-See `docs/M3_THREAT_MODEL.md` for prioritised risks. This MVP has no authentication, no application-layer database or document encryption, no automatic encrypted backup, no consent workflow, no verified data ingestion from records, no patient access-control boundary, and no production threat model. SQLite content, attached documents and report text are stored unencrypted unless the operating system's disk encryption covers them. Only run on loopback (`127.0.0.1`); do not deploy or expose it on a network.
+See `docs/M3_THREAT_MODEL.md` for prioritised risks. Protected mode now has a local owner, a key vault and an encrypted database, but there is no document encryption yet, no authenticated backup manifests, no consent workflow, no verified data ingestion from records, no patient access-control boundary, no independent security review, and no production threat model. Attached documents, backup manifests, any plaintext pre-migration backup, and downloaded reports or exports are stored unencrypted unless the operating system's disk encryption covers them. Database encryption alone does not make this application ready for real patient data. Only run on loopback (`127.0.0.1`); do not deploy or expose it on a network.
 
 - Records cannot be deleted (by design for now); a mistaken record can only be corrected or rejected before acceptance.
 - Restore is a CLI, restores the whole database (all cases), and expects the API to be stopped (not enforced).

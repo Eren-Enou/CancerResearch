@@ -25,7 +25,9 @@ other regime — that needs an independent legal and security assessment for a s
 **PoC finding that constrains the design:** with `PRAGMA cipher_memory_security = ON`, opening a database with a *wrong*
 key **crashed the Python process** (native stack overflow) instead of raising an error. Therefore SQLCipher must only ever
 receive a key that the vault has already authenticated (AES-GCM unwrap fails cleanly on a wrong passphrase), memory
-security stays off with this build, and the crash is to be reported upstream before adoption. SQLCipher also prints its
+security stays off with this build, and the crash is to be reported upstream before adoption. *(M3.1-C, 2026-10-26: the
+application uses upstream `sqlcipher3` 0.6.4 with SQLCipher 4.19.0, where a probe did not reproduce the crash; memory
+security nevertheless stays off and the vault-first order is kept. See `M3_1C_DATABASE_ENCRYPTION.md`.)* SQLCipher also prints its
 own error lines (`hmac check failed for pgno=1`) to stderr on a wrong key — harmless content-wise, but log handling must
 expect it.
 

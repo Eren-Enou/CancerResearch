@@ -4,19 +4,27 @@
 
 No real names, dates of birth, patient IDs, pathology records, medical images, scanned documents, or actual observations should be entered in the current application. All included fixture values are fictional. This is not healthcare software ready for storing protected health information.
 
-The app does **not** provide user login, per-user authorization, encryption-at-rest, encrypted backup, cloud synchronization, file ingestion safety checks, or a patient permission workflow. It should not be deployed to Vercel, hosted on a home LAN, or shared publicly. Even on localhost, other software running under the same operating-system account might access its local database.
+The app does **not** provide per-user authorization, document encryption, authenticated backup manifests, cloud synchronization, file ingestion safety checks, or a patient permission workflow. Protected mode has a single local owner and an encrypted database (M3.1-A/B/C); that alone does not make it fit for real data. It should not be deployed to Vercel, hosted on a home LAN, or shared publicly. Even on localhost, other software running under the same operating-system account might access its local database.
+
+## M3.1-C encrypted database
+Protected mode stores the database with SQLCipher 4 (sqlcipher3 0.6.4 / SQLCipher 4.19.0, AES-256-CBC + HMAC-SHA512 per
+page), keyed with `vault.derive(dek, "database")`. The server starts locked; the vault authenticates the credential
+before SQLCipher sees a key; there is no unencrypted fallback; locking wipes the key. `python -m app.encrypt_migrate`
+migrates plaintext installations losslessly (verified backup, fingerprint comparison, plaintext scan, atomic swap,
+resumable). **Documents, backup manifests and the plaintext pre-migration backup remain unencrypted.** Details,
+plaintext locations and risks: `M3_1C_DATABASE_ENCRYPTION.md`.
 
 ## M3.1-B key vault
 A random 256-bit data key (DEK) in `oncoscope-vault.json`, wrapped with AES-256-GCM under Argon2id(passphrase) and under
 HKDF(recovery key) (argon2-cffi, pyca/cryptography; no custom algorithms). Recovery, passphrase change, atomic verified
-writes, refusal of damaged/missing/replaced vaults, DEK wiped from session memory on lock. **The DEK encrypts nothing
-yet.** Details and remaining risks: `M3_1B_KEY_VAULT.md`.
+writes, refusal of damaged/missing/replaced vaults, DEK wiped from session memory on lock. Since M3.1-C it keys the
+database. Details and remaining risks: `M3_1B_KEY_VAULT.md`.
 
 ## M3.1-A protected local access
 Protected mode (default) requires an owner-passphrase session for every case-data API request; new audit entries name
 the owner; foreign origins and non-loopback peers are refused; the UI locks and discards case data on lock, inactivity,
-session end and 401. Design, verification and **remaining risks**: `M3_1A_PROTECTED_ACCESS.md`. **No encryption at rest
-yet** — the lock does not protect the files on disk.
+session end and 401. Design, verification and **remaining risks**: `M3_1A_PROTECTED_ACCESS.md`. (The files on disk were
+plaintext until M3.1-C; documents still are.)
 
 ## M3.0 documents
 `M3_DATA_INVENTORY.md` (where data lives), `M3_THREAT_MODEL.md` (prioritised risks, confirmed defects, limitations),
@@ -25,8 +33,9 @@ suite `backend/tests/test_security.py`. The repository is **public**: fixtures, 
 
 ## Existing controls
 
-- Protected mode: Argon2id passphrase verifier (`argon2-cffi`), 256-bit in-memory session tokens in the `Authorization`
-  header only, idle/lifetime expiry, immediate revocation on lock, rate-limited unlock, actor on every new audit entry.
+- Protected mode: key vault (Argon2id + AES-256-GCM wraps; the M3.1-A verifier is retired by migration 6), SQLCipher-
+  encrypted database, 256-bit in-memory session tokens in the `Authorization` header only, idle/lifetime expiry,
+  immediate revocation on lock (keys wiped), rate-limited unlock, actor on every new audit entry.
 - Requests from non-loopback peers, foreign `Origin`s or `Sec-Fetch-Site: cross-site/same-site` are refused (403).
 - FastAPI and Vite examples bind to `127.0.0.1`, not `0.0.0.0`.
 - No third-party AI API, analytics tracker, telemetry integration, or external database.
@@ -44,7 +53,8 @@ suite `backend/tests/test_security.py`. The repository is **public**: fixtures, 
   server and searches its log for sentinel values).
 - CI hygiene job blocks committed databases, document stores, backups, documents outside fictional fixtures and secrets.
 - Backups include a verification manifest; restores verify before and after and never overwrite an existing database or
-  differing document bytes without keeping them. Backups and the derived `document_text` cache are **unencrypted**.
+  differing document bytes without keeping them. In protected mode the database copy (including the derived
+  `document_text` cache) is **encrypted**; documents and the manifest in a backup are **not** (M3.1-D).
 - Input constraints and patient/source ownership checks.
 - Git excludes SQLite databases, DICOM files, `.env` files, local data directories (including attached documents and backups), and Playwright output.
 - Manual/synthetic records preserve source linkage; initial audit history retained for writes.
